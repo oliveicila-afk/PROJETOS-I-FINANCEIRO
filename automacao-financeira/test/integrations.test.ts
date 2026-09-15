@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 import { AsaasClient, AsaasApiError } from '../src/integrations/asaas.js';
 import { SellfluxClient } from '../src/integrations/sellflux.js';
+import { CustomerNotFoundError, MultipleCustomersFoundError, getFinancialSummary } from '../src/domain/financial-service.js';
 
 const originalFetch = globalThis.fetch;
 
@@ -52,5 +53,36 @@ describe('SellfluxClient', () => {
 
     assert.equal(request?.url, 'https://sellflux.example/api/campaigns?page=2&limit=30&status=1');
     assert.equal(request?.headers.get('authorization'), 'Bearer sellflux-test-token');
+  });
+});
+
+describe('getFinancialSummary', () => {
+  it('separa cobranças abertas e vencidas', async () => {
+    const summary = await getFinancialSummary({
+      listCustomers: async () => ({ data: [{ id: 'cus_1', name: 'Cliente Teste' }], hasMore: false, totalCount: 1, limit: 10, offset: 0 }),
+      listPayments: async () => ({
+        data: [
+          { id: 'pay_1', customer: 'cus_1', value: 100, status: 'PENDING', dueDate: '2099-01-01' },
+          { id: 'pay_2', customer: 'cus_1', value: 200, status: 'OVERDUE', dueDate: '2025-01-01' },
+          { id: 'pay_3', customer: 'cus_1', value: 300, status: 'RECEIVED', dueDate: '2025-01-01' }
+        ],
+        hasMore: false,
+        totalCount: 3,
+        limit: 100,
+        offset: 0
+      })
+    }, { cpfCnpj: '12345678900' }, new Date('2026-09-15T12:00:00Z'));
+
+    assert.equal(summary.openPayments.length, 2);
+    assert.equal(summary.overduePayments.length, 1);
+    assert.equal(summary.overduePayments[0].id, 'pay_2');
+  });
+
+  it('rejeita cliente não encontrado ou ambíguo', async () => {
+    const noCustomer = { listCustomers: async () => ({ data: [], hasMore: false, totalCount: 0, limit: 10, offset: 0 }), listPayments: async () => { throw new Error('nao deveria chamar'); } };
+    const manyCustomers = { listCustomers: async () => ({ data: [{ id: '1', name: 'A' }, { id: '2', name: 'B' }], hasMore: false, totalCount: 2, limit: 10, offset: 0 }), listPayments: async () => { throw new Error('nao deveria chamar'); } };
+
+    await assert.rejects(() => getFinancialSummary(noCustomer, { name: 'Inexistente' }), CustomerNotFoundError);
+    await assert.rejects(() => getFinancialSummary(manyCustomers, { name: 'Duplicado' }), MultipleCustomersFoundError);
   });
 });
