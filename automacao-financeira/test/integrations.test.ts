@@ -3,6 +3,8 @@ import { afterEach, describe, it } from 'node:test';
 import { AsaasClient, AsaasApiError } from '../src/integrations/asaas.js';
 import { SellfluxClient } from '../src/integrations/sellflux.js';
 import { CustomerNotFoundError, MultipleCustomersFoundError, getFinancialSummary } from '../src/domain/financial-service.js';
+import { buildAutomatedResponse } from '../src/domain/message-service.js';
+import { AsaasEventStore, parseAsaasPaymentEvent } from '../src/webhooks/asaas-webhook.js';
 
 const originalFetch = globalThis.fetch;
 
@@ -84,5 +86,42 @@ describe('getFinancialSummary', () => {
 
     await assert.rejects(() => getFinancialSummary(noCustomer, { name: 'Inexistente' }), CustomerNotFoundError);
     await assert.rejects(() => getFinancialSummary(manyCustomers, { name: 'Duplicado' }), MultipleCustomersFoundError);
+  });
+});
+
+describe('buildAutomatedResponse', () => {
+  const summary = {
+    customer: { id: 'cus_1', name: 'Cliente Teste' },
+    openPayments: [{ id: 'pay_1', customer: 'cus_1', value: 125.5, status: 'PENDING', dueDate: '2099-01-01', bankSlipUrl: 'https://example.test/boleto' }],
+    overduePayments: []
+  };
+
+  it('responde com boleto quando existe cobrança aberta', () => {
+    const response = buildAutomatedResponse('payment', summary);
+
+    assert.match(response.message, /R\$\s?125,50/);
+    assert.match(response.message, /https:\/\/example\.test\/boleto/);
+    assert.equal(response.transferToHuman, false);
+  });
+
+  it('transfere renegociação para atendimento humano', () => {
+    const response = buildAutomatedResponse('renegotiation', summary);
+
+    assert.equal(response.transferToHuman, true);
+    assert.equal(response.keepOpen, true);
+  });
+});
+
+describe('Asaas webhook', () => {
+  it('valida eventos e impede duplicidade pelo id', () => {
+    const store = new AsaasEventStore();
+    const event = parseAsaasPaymentEvent({ id: 'evt_1', event: 'PAYMENT_RECEIVED', payment: { id: 'pay_1' } });
+
+    assert.equal(store.reserve(event.id), true);
+    assert.equal(store.reserve(event.id), false);
+  });
+
+  it('rejeita payload sem identificador ou evento', () => {
+    assert.throws(() => parseAsaasPaymentEvent({ id: 'evt_1' }), /exige id e event/);
   });
 });

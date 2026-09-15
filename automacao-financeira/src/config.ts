@@ -11,5 +11,6 @@ export const config = {
   sellfluxApiUrl: process.env.SELLFLUX_API_URL ?? 'https://apis.sellflux.app/api/v1/flux-v2',
   sellfluxApiToken: process.env.SELLFLUX_API_TOKEN ?? '',
   asaasApiUrl: process.env.ASAAS_API_URL ?? 'https://api.asaas.com/v3',
-  asaasApiToken: process.env.ASAAS_API_TOKEN ?? ''
+  asaasApiToken: process.env.ASAAS_API_TOKEN ?? '',
+  asaasWebhookToken: process.env.ASAAS_WEBHOOK_TOKEN ?? ''
 } as const;
