@@ -110,6 +110,21 @@ describe('buildAutomatedResponse', () => {
     assert.equal(response.transferToHuman, true);
     assert.equal(response.keepOpen, true);
   });
+
+  it('entrega a mensagem do boleto a um remetente simulado', async () => {
+    const response = buildAutomatedResponse('payment', summary);
+    let deliveredTo = '';
+    let deliveredMessage = '';
+    const sender = async (phone: string, message: string) => {
+      deliveredTo = phone;
+      deliveredMessage = message;
+    };
+
+    await sender('5511999999999', response.message);
+
+    assert.equal(deliveredTo, '5511999999999');
+    assert.match(deliveredMessage, /https:\/\/example\.test\/boleto/);
+  });
 });
 
 describe('Asaas webhook', () => {
