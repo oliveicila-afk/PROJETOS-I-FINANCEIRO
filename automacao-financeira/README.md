@@ -1,6 +1,13 @@
 # Automacao Financeira Calandrini
 
-Base inicial do backend que vai conectar o fluxo do POP ao Sellflux e ao Asaas.
+Base inicial do backend que conecta o fluxo do POP ao SellFlux e ao Asaas.
+
+## Integrações disponíveis
+
+- Asaas: clientes e cobranças, com filtros de CPF/CNPJ, cliente, status e vencimento.
+- SellFlux: campanhas do Flux v2, com paginação e filtros documentados.
+
+Os endpoints de SAC, histórico de conversas e contatos ainda dependem do contrato específico disponibilizado para a conta SellFlux. Eles não devem ser inferidos a partir de endpoints de campanhas.
 
 ## Executar
 

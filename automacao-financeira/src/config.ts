@@ -8,7 +8,7 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 
 export const config = {
   port,
-  sellfluxApiUrl: process.env.SELLFLUX_API_URL ?? '',
+  sellfluxApiUrl: process.env.SELLFLUX_API_URL ?? 'https://apis.sellflux.app/api/v1/flux-v2',
   sellfluxApiToken: process.env.SELLFLUX_API_TOKEN ?? '',
   asaasApiUrl: process.env.ASAAS_API_URL ?? 'https://api.asaas.com/v3',
   asaasApiToken: process.env.ASAAS_API_TOKEN ?? ''
