@@ -47,7 +47,7 @@ export async function getFinancialSummary(
   }
 
   const customer = customers.data[0];
-  const payments = await asaas.listPayments({ customer: customer.id, limit: 100 });
+  const payments = await asaas.listPayments({ customer: customer.id, billingType: 'BOLETO', limit: 100 });
   const todayIso = today.toISOString().slice(0, 10);
   const openPayments = payments.data.filter((payment) =>
     ['PENDING', 'OVERDUE'].includes(payment.status)

@@ -41,6 +41,7 @@ export type CustomerFilters = {
 
 export type PaymentFilters = {
   customer?: string;
+  billingType?: string;
   status?: string;
   dueDateGe?: string;
   dueDateLe?: string;
@@ -86,6 +87,7 @@ export class AsaasClient {
   async listPayments(filters: PaymentFilters = {}): Promise<AsaasListResponse<AsaasPayment>> {
     return this.get('/payments', {
       customer: filters.customer,
+      billingType: filters.billingType,
       status: filters.status,
       'dueDate[ge]': filters.dueDateGe,
       'dueDate[le]': filters.dueDateLe,
