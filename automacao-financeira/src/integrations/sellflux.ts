@@ -47,7 +47,7 @@ export class SellfluxClient {
   constructor(
     private readonly token: string,
     baseUrl = 'https://apis.sellflux.app/api/v1/flux-v2',
-    whatsappUrl = 'https://apis.sellflux.app/automation/v1/whatsapp/data'
+    whatsappUrl = 'https://apis.sellflux.app/automation/v1/whatsapp/phone'
   ) {
     if (!token) {
       throw new Error('SELLFLUX_API_TOKEN nao configurado.');

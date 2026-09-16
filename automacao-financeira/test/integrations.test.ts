@@ -71,7 +71,7 @@ describe('SellfluxClient', () => {
     });
 
     assert.equal(request?.method, 'POST');
-    assert.equal(request?.url, 'https://apis.sellflux.app/automation/v1/whatsapp/data');
+    assert.equal(request?.url, 'https://apis.sellflux.app/automation/v1/whatsapp/phone');
     assert.equal(request?.headers.get('authorization'), 'Bearer sellflux-test-token');
     assert.deepEqual(await request?.json(), {
       phone: '+5511999999999',
