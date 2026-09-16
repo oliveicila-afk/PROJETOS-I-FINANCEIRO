@@ -56,6 +56,29 @@ describe('SellfluxClient', () => {
     assert.equal(request?.url, 'https://sellflux.example/api/campaigns?page=2&limit=30&status=1');
     assert.equal(request?.headers.get('authorization'), 'Bearer sellflux-test-token');
   });
+
+  it('envia template WhatsApp para um número', async () => {
+    let request: Request | undefined;
+    globalThis.fetch = async (input, init) => {
+      request = new Request(input, init);
+      return new Response('', { status: 200 });
+    };
+
+    await new SellfluxClient('sellflux-test-token').sendWhatsAppTemplate({
+      phone: '+5511999999999',
+      templateId: 1,
+      data: { boleto_link: 'https://example.test/boleto' }
+    });
+
+    assert.equal(request?.method, 'POST');
+    assert.equal(request?.url, 'https://apis.sellflux.app/automation/v1/whatsapp/data');
+    assert.equal(request?.headers.get('authorization'), 'Bearer sellflux-test-token');
+    assert.deepEqual(await request?.json(), {
+      phone: '+5511999999999',
+      template_id: 1,
+      data: { boleto_link: 'https://example.test/boleto' }
+    });
+  });
 });
 
 describe('getFinancialSummary', () => {
