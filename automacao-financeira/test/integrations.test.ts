@@ -5,6 +5,7 @@ import { SellfluxClient } from '../src/integrations/sellflux.js';
 import { CustomerNotFoundError, MultipleCustomersFoundError, getFinancialSummary } from '../src/domain/financial-service.js';
 import { buildAutomatedResponse } from '../src/domain/message-service.js';
 import { AsaasEventStore, parseAsaasPaymentEvent } from '../src/webhooks/asaas-webhook.js';
+import { buildBoletoTemplateData, sendBoletoTemplate } from '../src/domain/boleto-service.js';
 
 const originalFetch = globalThis.fetch;
 
@@ -161,5 +162,36 @@ describe('Asaas webhook', () => {
 
   it('rejeita payload sem identificador ou evento', () => {
     assert.throws(() => parseAsaasPaymentEvent({ id: 'evt_1' }), /exige id e event/);
+  });
+});
+
+describe('boleto template flow', () => {
+  it('preenche um único template com dados variáveis do boleto', async () => {
+    const calls: Array<{ phone: string; templateId: number; data?: Record<string, unknown> }> = [];
+    const customer = { id: 'cus_1', name: 'Cliente Teste' };
+    const payments = [{ id: 'pay_1', customer: 'cus_1', value: 100, status: 'PENDING', dueDate: '2099-01-01', bankSlipUrl: 'https://example.test/boleto-1' }];
+
+    const data = buildBoletoTemplateData(customer, payments);
+    await sendBoletoTemplate({
+      sendWhatsAppTemplate: async (input) => {
+        calls.push({ phone: input.phone, templateId: input.templateId, data: input.data });
+        return { sent: true };
+      }
+    }, '+5511999999999', 12, customer, payments);
+
+    assert.deepEqual(data, {
+      nome: 'Cliente Teste',
+      vencimento: '2099-01-01',
+      link_boleto: 'https://example.test/boleto-1'
+    });
+    assert.equal(calls[0].templateId, 12);
+    assert.deepEqual(calls[0].data, data);
+  });
+
+  it('bloqueia envio quando nenhum boleto tem link', () => {
+    assert.throws(() => buildBoletoTemplateData(
+      { id: 'cus_1', name: 'Cliente Teste' },
+      [{ id: 'pay_1', customer: 'cus_1', value: 100, status: 'PENDING', dueDate: '2099-01-01' }]
+    ), /Nenhum boleto com link/);
   });
 });
