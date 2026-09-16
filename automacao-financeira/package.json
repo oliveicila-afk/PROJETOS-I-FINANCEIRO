@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "build": "tsc",
-    "test": "tsx --test test/*.test.ts",
+    "dev": "node --import tsx --watch src/server.ts",
+    "build": "node ./node_modules/typescript/bin/tsc",
+    "test": "node --import tsx --test test/*.test.ts",
     "start": "node dist/server.js"
   },
   "dependencies": {
