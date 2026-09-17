@@ -5,6 +5,8 @@ import { sendBoletoTemplate, buildBoletoTemplateData } from './domain/boleto-ser
 import { getFinancialSummary } from './domain/financial-service.js';
 import { SellfluxClient } from './integrations/sellflux.js';
 import { AsaasEventStore, parseAsaasPaymentEvent } from './webhooks/asaas-webhook.js';
+import { parseSellfluxWebhook, extractPhoneFromWebhook, extractIdentifierFromMessage } from './webhooks/sellflux-webhook.js';
+import { buildSACResponse } from './domain/sac-response-service.js';
 
 const asaasEventStore = new AsaasEventStore();
 
@@ -128,6 +130,39 @@ const server = createServer(async (request, response) => {
       sendJson(response, 200, { sent: true, result });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Não foi possível enviar o boleto.';
+      sendJson(response, 400, { error: message });
+    }
+    return;
+  }
+
+  if (request.method === 'POST' && request.url === '/webhooks/sellflux/messages') {
+    try {
+      const payload = parseSellfluxWebhook(JSON.parse(await readBody(request)));
+      const phone = extractPhoneFromWebhook(payload);
+      const identifier = extractIdentifierFromMessage(payload);
+
+      const sellflux = new SellfluxClient(config.sellfluxApiToken);
+      if (!identifier.cpfCnpj && !identifier.name) {
+        await sellflux.sendWhatsAppText({
+          phone,
+          message: 'Para localizar seu cadastro com segurança, informe seu nome completo ou CPF.'
+        });
+        sendJson(response, 200, { processed: true, status: 'request_identifier' });
+        return;
+      }
+
+      const asaas = new AsaasClient(config.asaasApiToken, config.asaasApiUrl);
+      const summary = await getFinancialSummary(asaas, {
+        cpfCnpj: identifier.cpfCnpj,
+        name: identifier.name
+      });
+
+      const responseMessage = buildSACResponse(summary.customer, summary.openPayments, summary.overduePayments);
+      await sellflux.sendWhatsAppText({ phone, message: responseMessage });
+
+      sendJson(response, 200, { processed: true, customer: summary.customer.name });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Não foi possível processar a mensagem.';
       sendJson(response, 400, { error: message });
     }
     return;
