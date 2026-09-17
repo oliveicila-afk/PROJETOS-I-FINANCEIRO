@@ -40,6 +40,8 @@ O número da cliente é o destinatário; ele não seleciona o template. O envio 
 
 O atendimento sob demanda usa `POST /boletos/atendimento`: quando a cliente entra em contato, informe `cpfCnpj` ou `name` para consultar o Asaas naquele momento. Sem identificador, a resposta solicita nome completo ou CPF.
 
+A camada `src/integrations/sellflux-messages.ts` define o contrato interno para mensagens recebidas e respostas de texto. Ela valida telefone, identificador e conteúdo antes de qualquer consulta. O formato externo do SellFlux ainda precisa ser confirmado antes de ligar um webhook real a esse contrato.
+
 Antes de consultar ou enviar um boleto, o fluxo deve:
 
 1. Buscar as mensagens nos dois números configurados.
