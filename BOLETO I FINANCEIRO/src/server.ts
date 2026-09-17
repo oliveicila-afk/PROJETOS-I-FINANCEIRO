@@ -68,6 +68,35 @@ const server = createServer(async (request, response) => {
     return;
   }
 
+  if (request.method === 'POST' && request.url === '/boletos/atendimento') {
+    try {
+      const payload = JSON.parse(await readBody(request)) as { cpfCnpj?: string; name?: string };
+      if (!payload.cpfCnpj && !payload.name) {
+        sendJson(response, 200, {
+          status: 'request_identifier',
+          message: 'Para localizar seu cadastro com segurança, informe seu nome completo ou CPF.'
+        });
+        return;
+      }
+
+      const asaas = new AsaasClient(config.asaasApiToken, config.asaasApiUrl);
+      const summary = await getFinancialSummary(asaas, { cpfCnpj: payload.cpfCnpj, name: payload.name });
+      sendJson(response, 200, {
+        status: 'identified',
+        customer: summary.customer,
+        openPayments: summary.openPayments,
+        overduePayments: summary.overduePayments,
+        message: summary.overduePayments.length > 0
+          ? 'Identifiquei boleto(s) em atraso no seu cadastro.'
+          : 'Não identifiquei boleto em atraso no seu cadastro.'
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Não foi possível consultar o boleto.';
+      sendJson(response, 400, { error: message });
+    }
+    return;
+  }
+
   if (request.method === 'POST' && request.url === '/boletos/send') {
     try {
       const payload = JSON.parse(await readBody(request)) as {

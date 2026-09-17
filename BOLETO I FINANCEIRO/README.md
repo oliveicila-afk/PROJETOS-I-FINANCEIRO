@@ -38,6 +38,8 @@ O número da cliente é o destinatário; ele não seleciona o template. O envio 
 
 ## Identificação pelas conversas
 
+O atendimento sob demanda usa `POST /boletos/atendimento`: quando a cliente entra em contato, informe `cpfCnpj` ou `name` para consultar o Asaas naquele momento. Sem identificador, a resposta solicita nome completo ou CPF.
+
 Antes de consultar ou enviar um boleto, o fluxo deve:
 
 1. Buscar as mensagens nos dois números configurados.
@@ -50,7 +52,7 @@ Antes de consultar ou enviar um boleto, o fluxo deve:
 
 A integração concreta de histórico de conversas e OCR deve implementar `ConversationSearch` e `ImageTextReader`. O contrato desses endpoints precisa ser confirmado com a API do canal antes de ligar o acesso real.
 
-Para enviar, use `POST /boletos/send` com `confirm: true`, o identificador do cliente, o número destinatário e o número remetente. Sem essa confirmação, nenhum disparo é realizado.
+Para enviar, use `POST /boletos/send` com `confirm: true`, o identificador do cliente, o número destinatário e o número remetente. Sem essa confirmação, nenhum disparo é realizado. O webhook do Asaas não é necessário para a consulta no atendimento.
 
 ## Observação
 
