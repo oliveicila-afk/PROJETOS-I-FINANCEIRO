@@ -24,40 +24,44 @@ export type SACCustomerSummary = {
 };
 
 export class SellFluxSACClient {
-  constructor(private config: SellFluxConfig) {}
+  private sacApiUrl: string;
 
-  async getCustomerHistory(customerPhone: string, limit = 50): Promise<SACHistory[]> {
-    return this.get<SACHistory[]>('/sac/history', {
-      phone: customerPhone,
-      limit
+  constructor(private config: SellFluxConfig) {
+    this.sacApiUrl = 'https://api-lp-sac.sellflux.app';
+  }
+
+  async getCustomerHistory(customerId: string, limit = 50, page = 0): Promise<SACHistory[]> {
+    return this.get<SACHistory[]>(`/chat/note`, {
+      limit,
+      page,
+      lead_id: customerId
     });
   }
 
-  async getCustomerSummary(customerPhone: string): Promise<SACCustomerSummary> {
-    return this.get<SACCustomerSummary>('/sac/customer/summary', {
-      phone: customerPhone
-    });
+  async getCustomerSummary(customerId: string): Promise<SACCustomerSummary> {
+    const history = await this.getCustomerHistory(customerId, 100, 0);
+
+    return {
+      phone: '',
+      name: '',
+      total_messages: history.length,
+      last_message_date: history.length > 0 ? history[0].message_date : new Date().toISOString(),
+      last_message_content: history.length > 0 ? history[0].message_content : '',
+      customer_status: 'active'
+    };
   }
 
-  async getLatestMessages(customerPhone: string, limit = 10): Promise<SACHistory[]> {
-    return this.get<SACHistory[]>('/sac/latest-messages', {
-      phone: customerPhone,
-      limit
-    });
+  async getLatestMessages(customerId: string, limit = 10): Promise<SACHistory[]> {
+    const history = await this.getCustomerHistory(customerId, limit, 0);
+    return history.slice(0, limit);
   }
 
   async searchByCustomerName(name: string): Promise<SACCustomerSummary[]> {
-    return this.get<SACCustomerSummary[]>('/sac/search', {
-      query: name
-    });
+    throw new Error('Busca por nome não disponível via API. Use ID do lead.');
   }
 
   async searchByPhone(phone: string): Promise<SACCustomerSummary | null> {
-    const results = await this.get<SACCustomerSummary[]>('/sac/search', {
-      query: phone
-    });
-
-    return results.length > 0 ? results[0] : null;
+    throw new Error('Busca por telefone não disponível via API. Use ID do lead.');
   }
 
   async getConversationWithAnalysis(customerPhone: string): Promise<{
