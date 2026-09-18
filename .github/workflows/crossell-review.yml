@@ -1,0 +1,84 @@
+name: Crossell - Revisão de Demandas Diária
+
+on:
+  schedule:
+    # Executa diariamente às 08:00 UTC (05:00 Brasília)
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: 'Data inicial (YYYY-MM-DD) - opcional'
+        required: false
+      end_date:
+        description: 'Data final (YYYY-MM-DD) - opcional'
+        required: false
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Instalar dependências do Crossel
+        working-directory: Crossel I financeiro
+        run: npm ci
+
+      - name: Compilar TypeScript
+        working-directory: Crossel I financeiro
+        run: npm run build
+
+      - name: Executar testes
+        working-directory: Crossel I financeiro
+        run: npm test
+
+      - name: Calcular período de revisão
+        id: period
+        run: |
+          if [ -n "${{ github.event.inputs.start_date }}" ]; then
+            echo "start_date=${{ github.event.inputs.start_date }}" >> $GITHUB_OUTPUT
+          else
+            echo "start_date=$(date -d "yesterday" +%Y-%m-%d)" >> $GITHUB_OUTPUT
+          fi
+
+          if [ -n "${{ github.event.inputs.end_date }}" ]; then
+            echo "end_date=${{ github.event.inputs.end_date }}" >> $GITHUB_OUTPUT
+          else
+            echo "end_date=$(date +%Y-%m-%d)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Revisar demandas do período
+        working-directory: Crossel I financeiro
+        env:
+          ADVBOX_TOKEN: ${{ secrets.ADVBOX_TOKEN }}
+          ADVBOX_API_URL: ${{ secrets.ADVBOX_API_URL || 'https://app.advbox.com.br/api/v1' }}
+        run: npm run cli -- review-period ${{ steps.period.outputs.start_date }} ${{ steps.period.outputs.end_date }}
+
+      - name: Obter agenda do Fábio
+        working-directory: Crossel I financeiro
+        env:
+          ADVBOX_TOKEN: ${{ secrets.ADVBOX_TOKEN }}
+          ADVBOX_API_URL: ${{ secrets.ADVBOX_API_URL || 'https://app.advbox.com.br/api/v1' }}
+        if: always()
+        run: npm run cli -- fabio-schedule
+
+      - name: Obter agenda da Leticia
+        working-directory: Crossel I financeiro
+        env:
+          ADVBOX_TOKEN: ${{ secrets.ADVBOX_TOKEN }}
+          ADVBOX_API_URL: ${{ secrets.ADVBOX_API_URL || 'https://app.advbox.com.br/api/v1' }}
+        if: always()
+        run: npm run cli -- leticia-schedule
+
+      - name: Relatório de sucesso
+        if: success()
+        run: |
+          echo "✅ Revisão de demandas concluída com sucesso!"
+          echo "📅 Período: ${{ steps.period.outputs.start_date }} a ${{ steps.period.outputs.end_date }}"
+          echo "🔗 Logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
