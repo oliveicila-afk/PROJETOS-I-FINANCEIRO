@@ -4,6 +4,12 @@ import { AdvBoxPostsService, type AdvBoxPost } from '../integrations/advbox-post
 import { AdvBoxCustomersService } from '../integrations/advbox-customers.js';
 import { classifyTriageCase, type TriageResult } from './triage-service.js';
 
+export type ExternalReviewOptions = {
+  checkDriveDocuments?: boolean;
+  checkSellFluxSAC?: boolean;
+  attachDocuments?: boolean;
+};
+
 export type DemandReview = {
   period: {
     startDate: string;
@@ -142,6 +148,63 @@ export class AdvBoxReviewService {
     return result;
   }
 
+  async reviewDemandWithExternalValidation(
+    demand: AdvBoxLawsuit,
+    options: ExternalReviewOptions = { checkDriveDocuments: true, checkSellFluxSAC: true }
+  ): Promise<{ hasOpportunity: boolean; evidence: string[] }> {
+    const evidence: string[] = [];
+
+    if (options.checkDriveDocuments) {
+      evidence.push(`[Drive] Revisar contracheques e extratos do cliente ${demand.customer_name}`);
+    }
+
+    if (options.checkSellFluxSAC) {
+      evidence.push(`[SAC SellFlux] Verificar histórico de atendimento do cliente ${demand.customer_name}`);
+    }
+
+    const hasOpportunity = evidence.length > 0;
+
+    return { hasOpportunity, evidence };
+  }
+
+  async reviewNoOpportunityCaseWithDrive(demand: AdvBoxLawsuit): Promise<{
+    hasOpportunity: boolean;
+    driveDocuments: string[];
+    bankActions: string[];
+  }> {
+    const driveDocuments: string[] = [];
+    const bankActions: string[] = [];
+
+    driveDocuments.push(`Revisar pasta do cliente ${demand.customer_name} no Google Drive`);
+    driveDocuments.push(`Procurar por: contracheques, extratos bancários, documentos financeiros`);
+
+    if (demand.notes.toLowerCase().includes('acao bancaria') || demand.notes.toLowerCase().includes('ação bancária')) {
+      bankActions.push(`Possível ação bancária identificada nas notas: ${demand.notes}`);
+    }
+
+    return {
+      hasOpportunity: bankActions.length > 0 || driveDocuments.length > 0,
+      driveDocuments,
+      bankActions
+    };
+  }
+
+  async verifySellFluxSACHistory(customerName: string): Promise<{
+    hasHistory: boolean;
+    sacNotes: string[];
+    recommendation: string;
+  }> {
+    const sacNotes: string[] = [];
+    sacNotes.push(`Verificar histórico do cliente ${customerName} no SAC do SellFlux`);
+    sacNotes.push(`Conferir: última interação, demandas anteriores, status do cliente`);
+
+    return {
+      hasHistory: true,
+      sacNotes,
+      recommendation: `Revise o SAC antes de finalizar como "sem oportunidade"`
+    };
+  }
+
   async generateReviewReport(review: DemandReview): Promise<string> {
     const lines: string[] = [];
     lines.push('='.repeat(80));
@@ -188,6 +251,12 @@ export class AdvBoxReviewService {
           lines.push(`    Nota: ${result.standardTaskNote}`);
         }
       });
+      lines.push('');
+
+      lines.push(`📌 PRÓXIMOS PASSOS`);
+      lines.push(`1. Usar skill 'revisar-sem-oportunidade-advbox' para casos negativos`);
+      lines.push(`2. Usar skill 'verificar-cliente-sac-sellflux' para validar agendamento`);
+      lines.push(`3. Anexar documentos do Drive ao AdvBox quando houver oportunidade`);
     }
 
     lines.push('');

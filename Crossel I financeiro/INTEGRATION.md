@@ -257,12 +257,53 @@ npm test        # Executar testes novamente
 8. Registra resultado nos logs
 ```
 
+## 🔗 Integração com Skills Operacionais
+
+O Crossel integra-se com duas skills especializadas para validação de casos:
+
+### revisar-sem-oportunidade-advbox
+
+Quando um caso vier marcado como "sem oportunidade":
+
+```bash
+/revisar-sem-oportunidade-advbox
+```
+
+**O que faz:**
+- Revisa contracheques e extratos no Google Drive
+- Registra evidências de demanda bancária
+- Anexa documentos ao AdvBox
+- Encaminha para comercial se encontrar oportunidade
+
+**Quando usar:**
+- Após CLI retornar demandas com status "no_opportunity"
+- Para confirmar antes de descartar um caso
+
+### verificar-cliente-sac-sellflux
+
+Antes de finalizar um caso como "sem oportunidade":
+
+```bash
+/verificar-cliente-sac-sellflux
+```
+
+**O que faz:**
+- Verifica histórico de atendimento no SAC do SellFlux
+- Valida classificação "sem oportunidade"
+- Confirma antes de fechar caso no AdvBox
+
+**Quando usar:**
+- Para casos ambíguos ou que necessitam confirmação
+- Antes de descarte final
+
 ## ✅ Próximos Passos
 
 1. Configure o `ADVBOX_TOKEN` no GitHub Secrets
 2. Execute manualmente o primeiro workflow
 3. Revise os logs para validar a integração
-4. Use a CLI para casos específicos conforme necessário
+4. Para casos "sem oportunidade":
+   - Use `/revisar-sem-oportunidade-advbox` para revisar Drive
+   - Use `/verificar-cliente-sac-sellflux` para confirmar no SAC
 5. Configure notificações se desejar (email, Slack, etc)
 
 ## 📞 Suporte
