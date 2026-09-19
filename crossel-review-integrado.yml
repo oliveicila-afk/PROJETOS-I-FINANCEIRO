@@ -1,0 +1,41 @@
+name: Crossel - Revisão de Casos
+
+on:
+  schedule:
+    # 8h America/Cuiaba (10h UTC no horário de verão)
+    - cron: '0 10 * * *'
+    # 14h America/Cuiaba (16h UTC no horário de verão)
+    - cron: '0 16 * * *'
+  workflow_dispatch:
+
+jobs:
+  triagem-advbox:
+    name: Triagem Advbox e Revisão SellFlux
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v3
+
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependências Python
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests google-auth-oauthlib google-auth-httplib2 google-api-python-client PyPDF2
+
+      - name: Revisar casos 'sem oportunidade'
+        env:
+          ADVBOX_API_TOKEN: ${{ secrets.ADVBOX_API_TOKEN }}
+          SELLFLUX_API_TOKEN_: ${{ secrets.SELLFLUX_API_TOKEN_ }}
+          GOOGLE_DRIVE_CREDENTIALS: ${{ secrets.GOOGLE_DRIVE_CREDENTIALS }}
+          ADVBOX_COMMERCIAL_ID: ${{ secrets.ADVBOX_COMMERCIAL_ID }}
+        run: |
+          python revisar_sem_oportunidade.py
+
+      # Se você tinha outros steps antes, deixe-os abaixo:
+      # - name: Outro step aqui
+      #   run: seu-comando
