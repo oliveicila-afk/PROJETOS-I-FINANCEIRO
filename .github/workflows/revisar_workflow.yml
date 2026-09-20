@@ -1,9 +1,11 @@
-name: Revisar posts 'sem oportunidade' do Advbox
+name: Revisar posts 'sem oportunidade' do Advbox - v2.0
 
 on:
   schedule:
-    # Rodar diariamente às 9h (horário de Cuiabá = UTC-4)
-    - cron: '0 13 * * *'
+    # Primeira execução: 8h horário de Cuiabá (UTC-4) = 12h UTC
+    - cron: '0 12 * * *'
+    # Segunda execução: 15h horário de Cuiabá (UTC-4) = 19h UTC
+    - cron: '0 19 * * *'
   workflow_dispatch:  # Permite rodar manualmente
 
 jobs:
@@ -27,13 +29,38 @@ jobs:
       run: |
         echo "${{ secrets.GOOGLE_CREDS_BASE64 }}" | base64 -d > credentials.json
 
+    - name: Determinar intervalo de tempo para análise
+      id: time_interval
+      run: |
+        # Determinar qual execução é (8h ou 15h)
+        HORA_UTC=$(date -u +%H)
+
+        if [ "$HORA_UTC" = "12" ]; then
+          # É a execução das 8h (UTC 12h)
+          # Revisar desde a última execução das 15h do dia anterior até agora
+          HORA_INICIO="15:00"
+          HORA_FIM="08:00"
+          echo "Execução: 8h (revisar desde 15h do dia anterior)"
+        else
+          # É a execução das 15h (UTC 19h)
+          # Revisar desde a execução das 8h até agora
+          HORA_INICIO="08:00"
+          HORA_FIM="15:00"
+          echo "Execução: 15h (revisar desde 8h)"
+        fi
+
+        echo "hora_inicio=$HORA_INICIO" >> $GITHUB_OUTPUT
+        echo "hora_fim=$HORA_FIM" >> $GITHUB_OUTPUT
+
     - name: Executar revisor de posts
       env:
         ADVBOX_API_TOKEN: ${{ secrets.ADVBOX_TOKEN }}
         ADVBOX_API_URL: 'https://api.advbox.com.br/api'
         GOOGLE_CREDS_JSON: 'credentials.json'
+        HORA_INICIO: ${{ steps.time_interval.outputs.hora_inicio }}
+        HORA_FIM: ${{ steps.time_interval.outputs.hora_fim }}
       run: |
-        python revisar_sem_oportunidade.py > revisao_output.txt 2>&1
+        python revisar_sem_oportunidade_v2.py > revisao_output.txt 2>&1
 
     - name: Enviar relatório por email (SUCESSO)
       if: success()
@@ -43,38 +70,36 @@ jobs:
         server_port: 465
         username: ${{ secrets.SMTP_USER }}
         password: ${{ secrets.SMTP_PASS }}
-        subject: '✅ Relatório Crossel - Revisão de posts sem oportunidade'
+        subject: '✅ Relatório Crossel - Triagem Automática de Posts AdvBox'
         to: ${{ secrets.EMAIL_DESTINO }}
         from: ${{ secrets.SMTP_USER }}
         body: |
-          📋 RELATÓRIO CROSSEL - AUTOMAÇÃO DE TRIAGEM
+          📋 RESUMO DA TRIAGEM AUTOMÁTICA DO ADVBOX
 
-          Data: $(date +'%d/%m/%Y às %H:%M:%S')
+          Data e Hora: $(date +'%d/%m/%Y às %H:%M:%S')
           Status: ✅ SUCESSO
 
           ═══════════════════════════════════════════════════════════
 
-          📊 RESUMO DA EXECUÇÃO:
+          📊 ESTATÍSTICAS DO PERÍODO:
 
-          • Casos processados: Ver arquivo em anexo
-          • Empréstimos detectados: Confira o relatório
-          • Casos encaminhados: Verifique no Advbox
+          • Total de casos processados: [ver arquivo em anexo]
+          • Oportunidades encaminhadas ao comercial: [quantidade]
+          • Sem oportunidade: [quantidade]
+          • Ambíguos (revisão manual): [quantidade]
 
           ═══════════════════════════════════════════════════════════
 
-          📋 INFORMAÇÕES POR CASO:
+          ⚠️ CASOS COM AMBIGUIDADE:
 
-          Para cada caso processado, confira:
-          ✓ Cliente: [Nome do cliente - será incluído no relatório JSON]
-          ✓ Número de Processo: [ID do caso - será incluído no relatório JSON]
-          ✓ Classificação: sem_oportunidade
-          ✓ Ação: Encaminhado para comercial ou mantido
+          Se houver casos que requerem revisão manual:
+          [Nome do Cliente | Número do Processo]
 
           ═══════════════════════════════════════════════════════════
 
           📁 Detalhes completos em: https://github.com/${{ github.repository }}/blob/main/results/review_results.json
 
-          Para questões: Verifique o histórico de execução em Actions
+          ✅ Próxima execução: Confira o histórico em GitHub Actions
 
     - name: Enviar relatório por email (se houver erros)
       if: failure()
@@ -107,5 +132,5 @@ jobs:
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         git add results/review_results.json || true
-        git commit -m "📋 Atualizar resultados da revisão de posts ($(date +'%d/%m/%Y %H:%M'))" || true
-        git push
+        git commit -m "📋 Atualizar resultados da revisão ($(date +'%d/%m/%Y %H:%M'))" || true
+        git push || true

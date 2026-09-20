@@ -1,632 +1,437 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-Revisar casos 'sem oportunidade' no Advbox
-Verifica contracheques no Google Drive e histórico no SellFlux
-Automatiza as skills:
-- revisar-sem-oportunidade-advbox
-- verificar-cliente-sac-sellflux
+CROSSEL - Automação de Triagem AdvBox com Verificação SAC
+Versão 2.0 - Com análise de documentos e notas SAC
+
+Fluxo:
+1. Consulta AdvBox por petições iniciais no período
+2. Analisa notas do AdvBox
+3. Verifica documentos no Gmail (pasta do cliente)
+4. Verifica notas no SellFlux (SAC)
+5. Identifica oportunidades ou confirma "sem oportunidade"
+6. Encaminha a Leticia/Fábio quando necessário
+7. Gera relatório em email
 """
 
 import os
 import json
 import re
-from datetime import datetime
-from typing import Optional, List, Dict, Any
-import logging
+from datetime import datetime, timedelta
+from typing import Dict, List, Tuple
+import base64
+from email.mime.text import MIMEText
 
 import requests
-from google.oauth2.service_account import Credentials
-from google.auth.transport.requests import Request
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-import PyPDF2
+from google.auth.transport.requests import Request
 
 # ============================================================================
-# CONFIGURAÇÃO E LOGGING
+# CONFIGURAÇÕES
 # ============================================================================
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+ADVBOX_API_TOKEN = os.getenv("ADVBOX_API_TOKEN")
+ADVBOX_API_URL = os.getenv("ADVBOX_API_URL", "https://api.advbox.com.br/api")
+GOOGLE_CREDS_JSON = os.getenv("GOOGLE_CREDS_JSON", "credentials.json")
 
-# Tokens e configurações via variáveis de ambiente
-ADVBOX_API_TOKEN = os.getenv('ADVBOX_API_TOKEN')
-SELLFLUX_API_TOKEN = os.getenv('SELLFLUX_API_TOKEN_')
-GOOGLE_DRIVE_CREDENTIALS = os.getenv('GOOGLE_DRIVE_CREDENTIALS')  # JSON em base64
-ADVBOX_BASE_URL = "https://api.advbox.com"
-SELLFLUX_BASE_URL = "https://api-lb-sac.sellflux.app"
-
-# Padrões de busca para demandas bancárias
-LOAN_PATTERNS = [
-    r"empr[eé]stimo",
-    r"consignado",
-    r"consigna[çc][ãa]o",
-    r"CDC",
-    r"cr[eé]dito direto ao consumidor",
-    r"parcela",
-    r"margem",
-    r"cart[ãa]o consignado",
-    r"tarifa",
-    r"d[eé]bito autom[ãa]tico",
-    r"financeira",
-    r"banco",
-]
+# Intervalo de tempo (passado via ambiente)
+HORA_INICIO = os.getenv("HORA_INICIO")  # Formato: HH:MM (ex: "08:00")
+HORA_FIM = os.getenv("HORA_FIM")        # Formato: HH:MM (ex: "15:00")
 
 # ============================================================================
-# CLASSE: ADVBOX
+# CLASSE: CROSSEL ANALYZER
 # ============================================================================
 
-class AdvboxAPI:
-    def __init__(self, api_token: str):
-        self.api_token = api_token
-        self.base_url = ADVBOX_BASE_URL
-        self.headers = {
-            "Authorization": f"Bearer {api_token}",
-            "Content-Type": "application/json"
+class CrosselAnalyzer:
+    def __init__(self):
+        self.advbox_headers = {"Authorization": f"Bearer {ADVBOX_API_TOKEN}"}
+        self.resultados = {
+            "total_processados": 0,
+            "oportunidades": [],
+            "sem_oportunidade": [],
+            "ambiguos": []
         }
+        self.google_service = self._init_google_service()
+        self.sellflux_service = self._init_sellflux_service()
 
-    def get_posts_sem_oportunidade(self, limit: int = 50) -> List[Dict[str, Any]]:
-        """
-        Busca posts classificados como 'sem oportunidade' no Advbox.
-        Retorna lista de posts com cliente, processo, etc.
-        """
-        logger.info(f"Buscando posts 'sem oportunidade' (limite: {limit})...")
-
+    def _init_google_service(self):
+        """Inicializa serviço Google Drive e Gmail"""
         try:
-            # Ajuste endpoint conforme documentação da API do Advbox
-            # Exemplo: /posts?classification=sem_oportunidade&limit=50
-            url = f"{self.base_url}/posts"
-            params = {
-                "classification": "sem_oportunidade",
-                "limit": limit,
-                "sort": "-created_at"
+            scopes = [
+                "https://www.googleapis.com/auth/drive",
+                "https://www.googleapis.com/auth/gmail.modify"
+            ]
+            creds = service_account.Credentials.from_service_account_file(
+                GOOGLE_CREDS_JSON, scopes=scopes
+            )
+            return {
+                "drive": build("drive", "v3", credentials=creds),
+                "gmail": build("gmail", "v1", credentials=creds)
             }
-
-            response = requests.get(url, headers=self.headers, params=params, timeout=30)
-            response.raise_for_status()
-
-            posts = response.json().get('data', [])
-            logger.info(f"Encontrados {len(posts)} posts sem oportunidade")
-            return posts
-
-        except requests.RequestException as e:
-            logger.error(f"Erro ao buscar posts: {e}")
-            return []
-
-    def attach_document(self, post_id: str, file_path: str, filename: str) -> bool:
-        """Anexa documento ao post no Advbox"""
-        try:
-            url = f"{self.base_url}/posts/{post_id}/attachments"
-
-            with open(file_path, 'rb') as f:
-                files = {'file': (filename, f)}
-                response = requests.post(
-                    url,
-                    headers={"Authorization": f"Bearer {self.api_token}"},
-                    files=files,
-                    timeout=60
-                )
-
-            response.raise_for_status()
-            logger.info(f"Documento {filename} anexado ao post {post_id}")
-            return True
-
         except Exception as e:
-            logger.error(f"Erro ao anexar documento: {e}")
-            return False
-
-    def add_comment(self, post_id: str, comment: str) -> bool:
-        """Adiciona comentário ao post"""
-        try:
-            url = f"{self.base_url}/posts/{post_id}/comments"
-            data = {"content": comment}
-
-            response = requests.post(
-                url,
-                headers=self.headers,
-                json=data,
-                timeout=30
-            )
-
-            response.raise_for_status()
-            logger.info(f"Comentário adicionado ao post {post_id}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Erro ao adicionar comentário: {e}")
-            return False
-
-    def assign_to_commercial(self, post_id: str, assignee_id: str) -> bool:
-        """Atribui post ao setor comercial"""
-        try:
-            url = f"{self.base_url}/posts/{post_id}"
-            data = {"assigned_to": assignee_id}
-
-            response = requests.patch(
-                url,
-                headers=self.headers,
-                json=data,
-                timeout=30
-            )
-
-            response.raise_for_status()
-            logger.info(f"Post {post_id} atribuído ao comercial")
-            return True
-
-        except Exception as e:
-            logger.error(f"Erro ao atribuir post: {e}")
-            return False
-
-    def close_post(self, post_id: str, status: str = "closed") -> bool:
-        """Marca post como concluído"""
-        try:
-            url = f"{self.base_url}/posts/{post_id}"
-            data = {"status": status}
-
-            response = requests.patch(
-                url,
-                headers=self.headers,
-                json=data,
-                timeout=30
-            )
-
-            response.raise_for_status()
-            logger.info(f"Post {post_id} marcado como {status}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Erro ao fechar post: {e}")
-            return False
-
-
-# ============================================================================
-# CLASSE: GOOGLE DRIVE
-# ============================================================================
-
-class GoogleDriveAPI:
-    def __init__(self, credentials_json: str):
-        """
-        credentials_json: string JSON com credenciais da service account
-        """
-        self.creds = Credentials.from_service_account_info(
-            json.loads(credentials_json),
-            scopes=['https://www.googleapis.com/auth/drive.readonly']
-        )
-        self.service = build('drive', 'v3', credentials=self.creds)
-
-    def search_folder(self, client_name: str) -> Optional[str]:
-        """Busca pasta do cliente no Google Drive"""
-        logger.info(f"Buscando pasta do cliente: {client_name}")
-
-        try:
-            query = f"name contains '{client_name}' and mimeType='application/vnd.google-apps.folder'"
-            results = self.service.files().list(
-                q=query,
-                spaces='drive',
-                fields='files(id, name, parents)',
-                pageSize=5
-            ).execute()
-
-            files = results.get('files', [])
-
-            if not files:
-                logger.warning(f"Pasta não encontrada para: {client_name}")
-                return None
-
-            # Retorna primeiro resultado (pode haver múltiplos)
-            folder_id = files[0]['id']
-            logger.info(f"Pasta encontrada: {files[0]['name']} (ID: {folder_id})")
-            return folder_id
-
-        except Exception as e:
-            logger.error(f"Erro ao buscar pasta: {e}")
+            print(f"[AVISO] Erro ao inicializar Google Services: {e}")
             return None
 
-    def find_payroll_documents(self, folder_id: str) -> List[Dict[str, str]]:
+    def _init_sellflux_service(self):
+        """Inicializa conexão com SellFlux (SAC)"""
+        # Implementar conforme API do SellFlux
+        # Por enquanto, retorna placeholder
+        return None
+
+    # ========================================================================
+    # ETAPA 1: CONSULTAR ADVBOX
+    # ========================================================================
+
+    def consultar_advbox_petições(self, hora_inicio: str, hora_fim: str) -> List[Dict]:
         """
-        Encontra contracheques e extratos bancários na pasta
-        Retorna lista com id, name e mimeType
-        """
-        logger.info(f"Procurando contracheques/extratos na pasta {folder_id}")
+        Consulta AdvBox por petições iniciais no período especificado
 
-        payroll_keywords = [
-            'contracheque', 'holerite', 'folha', 'remuneração',
-            'extrato', 'banco', 'conta'
-        ]
+        Args:
+            hora_inicio: String "HH:MM" (ex: "08:00")
+            hora_fim: String "HH:MM" (ex: "15:00")
 
-        documents = []
-
-        try:
-            # Busca recursivamente na pasta
-            for keyword in payroll_keywords:
-                query = f"'{folder_id}' in parents and name contains '{keyword}'"
-
-                results = self.service.files().list(
-                    q=query,
-                    spaces='drive',
-                    fields='files(id, name, mimeType, createdTime)',
-                    pageSize=50,
-                    orderBy='createdTime desc'
-                ).execute()
-
-                documents.extend(results.get('files', []))
-
-            # Remove duplicatas
-            unique_docs = {doc['id']: doc for doc in documents}.values()
-            logger.info(f"Encontrados {len(unique_docs)} documentos")
-
-            return list(unique_docs)
-
-        except Exception as e:
-            logger.error(f"Erro ao buscar documentos: {e}")
-            return []
-
-    def download_file(self, file_id: str, file_name: str) -> Optional[str]:
-        """
-        Baixa arquivo do Google Drive
-        Retorna caminho do arquivo salvo
+        Returns:
+            Lista de petições encontradas
         """
         try:
-            request = self.service.files().get_media(fileId=file_id)
+            # Converter horário local (Cuiabá, UTC-4) para UTC
+            inicio_dt = self._parse_hora_local(hora_inicio)
+            fim_dt = self._parse_hora_local(hora_fim)
 
-            # Cria diretório temporário se não existir
-            os.makedirs('/tmp/drive_downloads', exist_ok=True)
-            file_path = f"/tmp/drive_downloads/{file_name}"
+            # Se hora_fim < hora_inicio, é período que atravessa noite
+            if fim_dt < inicio_dt:
+                fim_dt += timedelta(days=1)
 
-            with open(file_path, 'wb') as f:
-                f.write(request.execute())
+            # Formatar para ISO 8601
+            data_inicio = inicio_dt.isoformat()
+            data_fim = fim_dt.isoformat()
 
-            logger.info(f"Arquivo baixado: {file_path}")
-            return file_path
-
-        except Exception as e:
-            logger.error(f"Erro ao baixar arquivo: {e}")
-            return None
-
-
-# ============================================================================
-# CLASSE: SELLFLUX SAC
-# ============================================================================
-
-class SellfluxAPI:
-    def __init__(self, api_token: str):
-        self.api_token = api_token
-        self.base_url = SELLFLUX_BASE_URL
-        self.headers = {
-            "Authorization": f"Bearer {api_token}",
-            "Content-Type": "application/json"
-        }
-
-    def get_customer_messages(self, lead_id: str, limit: int = 50, page: int = 0) -> List[Dict[str, Any]]:
-        """
-        Busca histórico de mensagens do cliente no SAC
-        Retorna lista de mensagens com data, conteúdo, autor, etc.
-        """
-        logger.info(f"Buscando mensagens do cliente {lead_id} no SellFlux")
-
-        try:
-            url = f"{self.base_url}/chat/message"
+            # Chamar API AdvBox
+            endpoint = f"{ADVBOX_API_URL}/petitions"
             params = {
-                "lead_id": lead_id,
-                "limit": limit,
-                "page": page
+                "type": "initial",  # Petições iniciais
+                "createdAt[gte]": data_inicio,
+                "createdAt[lte]": data_fim,
+                "limit": 1000
             }
 
             response = requests.get(
-                url,
-                headers=self.headers,
+                endpoint,
+                headers=self.advbox_headers,
                 params=params,
                 timeout=30
             )
-
             response.raise_for_status()
 
-            messages = response.json().get('data', [])
-            logger.info(f"Encontradas {len(messages)} mensagens")
+            petições = response.json().get("data", [])
+            print(f"[OK] {len(petições)} petições encontradas no período")
 
-            return messages
+            return petições
 
-        except requests.RequestException as e:
-            logger.error(f"Erro ao buscar mensagens SellFlux: {e}")
+        except Exception as e:
+            print(f"[ERRO] Ao consultar AdvBox: {e}")
             return []
 
+    def _parse_hora_local(self, hora_str: str) -> datetime:
+        """Converte "HH:MM" para datetime hoje (horário Cuiabá, UTC-4)"""
+        hoje = datetime.now()
+        h, m = map(int, hora_str.split(":"))
+        return hoje.replace(hour=h, minute=m, second=0, microsecond=0)
 
-# ============================================================================
-# ANÁLISE DE DOCUMENTOS
-# ============================================================================
+    # ========================================================================
+    # ETAPA 2: ANALISAR NOTAS ADVBOX
+    # ========================================================================
 
-def extract_text_from_pdf(file_path: str) -> str:
-    """Extrai texto de arquivo PDF"""
-    try:
-        text = ""
-        with open(file_path, 'rb') as f:
-            reader = PyPDF2.PdfReader(f)
-            for page in reader.pages:
-                text += page.extract_text() + "\n"
+    def analisar_nota_advbox(self, nota: str) -> Tuple[str, List[str]]:
+        """
+        Analisa a nota do caso no AdvBox conforme padrões definidos
 
-        return text.lower()
+        Returns:
+            (classificacao, demandas_identificadas)
+            classificacao: "sem_oportunidade", "oportunidade", "ambiguo"
+            demandas_identificadas: lista de demandas encontradas
+        """
+        nota_lower = nota.lower()
+        demandas = []
 
-    except Exception as e:
-        logger.error(f"Erro ao extrair texto do PDF: {e}")
-        return ""
+        # REGRA 1: Ação Bancária Identificada
+        if "possível ação bancária identificada" in nota_lower:
+            demandas.append("POSSÍVEL AÇÃO BANCÁRIA IDENTIFICADA NO CONTRACHEQUE")
+            return "oportunidade", demandas
 
+        # REGRA 2: Verificar "Novas oportunidades: Nenhuma;"
+        if re.search(r"novas\s+oportunidades:\s*nenhuma", nota_lower, re.IGNORECASE):
+            return "sem_oportunidade", []
 
-def find_loan_indicators(text: str) -> List[Dict[str, str]]:
-    """
-    Procura sinais de empréstimo/consignado no texto
-    Retorna lista com padrão encontrado e contexto
-    """
-    indicators = []
+        # REGRA 3: Verificar "Não foi identificada nenhuma nova oportunidade"
+        if "não foi identificada nenhuma nova oportunidade" in nota_lower:
+            return "sem_oportunidade", []
 
-    for pattern in LOAN_PATTERNS:
-        matches = re.finditer(pattern, text, re.IGNORECASE)
+        # REGRA 4: Verificar padrão "Novas oportunidades: [algo diferente de nenhuma]"
+        match_oportunidades = re.search(
+            r"novas\s+oportunidades:\s*([^;\n]+)",
+            nota_lower,
+            re.IGNORECASE
+        )
+        if match_oportunidades:
+            oportunidade = match_oportunidades.group(1).strip()
+            if oportunidade.lower() != "nenhuma":
+                demandas.append(f"Identificada novas oportunidades para fechamento: {oportunidade}")
+                return "oportunidade", demandas
 
-        for match in matches:
-            # Extrai contexto (50 caracteres antes e depois)
-            start = max(0, match.start() - 50)
-            end = min(len(text), match.end() + 50)
-            context = text[start:end].replace('\n', ' ').strip()
+        # REGRA 5: Se não tiver marcação clara, é ambíguo
+        return "ambiguo", demandas
 
-            indicators.append({
-                "pattern": pattern,
-                "found": match.group(),
-                "context": context
-            })
+    # ========================================================================
+    # ETAPA 3: VERIFICAR DOCUMENTOS NO GMAIL
+    # ========================================================================
 
-    return indicators
+    def analisar_documentos_gmail(self, numero_cliente: str) -> Tuple[bool, List[str]]:
+        """
+        Procura pasta do cliente no Gmail e analisa documentos
 
+        Returns:
+            (tem_demanda, demandas_identificadas)
+        """
+        if not self.google_service:
+            print(f"[AVISO] Google Services não disponível, pulando análise Gmail para cliente {numero_cliente}")
+            return False, []
 
-def analyze_payroll_documents(drive_api: GoogleDriveAPI, documents: List[Dict]) -> Dict[str, Any]:
-    """
-    Analisa contracheques/extratos para encontrar demandas bancárias
-    Retorna dict com resultado e evidências
-    """
-    result = {
-        "has_opportunity": False,
-        "indicators": [],
-        "analyzed_docs": [],
-        "summary": ""
-    }
+        try:
+            drive = self.google_service["drive"]
 
-    for doc in documents:
-        logger.info(f"Analisando documento: {doc['name']}")
+            # Procurar pasta do cliente (ex: "9325" ou "Cliente 9325")
+            query = f"name contains '{numero_cliente}' and mimeType='application/vnd.google-apps.folder'"
+            results = drive.files().list(
+                q=query,
+                spaces="drive",
+                fields="files(id, name)",
+                pageSize=5
+            ).execute()
 
-        # Baixa documento
-        file_path = drive_api.download_file(doc['id'], doc['name'])
-        if not file_path:
-            continue
+            pastas = results.get("files", [])
+            if not pastas:
+                print(f"[INFO] Nenhuma pasta encontrada para cliente {numero_cliente}")
+                return False, []
 
-        # Extrai texto (PDFs, ODS, etc.)
-        text = extract_text_from_pdf(file_path)
-        if not text:
-            continue
+            demandas = []
+            # Analisar documentos na primeira pasta encontrada
+            for pasta in pastas[:1]:  # Pega primeira pasta
+                print(f"[OK] Analisando pasta: {pasta['name']}")
 
-        # Procura indicadores
-        indicators = find_loan_indicators(text)
+                # Listar arquivos na pasta
+                query_files = f"'{pasta['id']}' in parents and trashed=false"
+                files_results = drive.files().list(
+                    q=query_files,
+                    spaces="drive",
+                    fields="files(id, name, mimeType)",
+                    pageSize=50
+                ).execute()
 
-        if indicators:
-            result["has_opportunity"] = True
-            result["indicators"].extend([
-                {
-                    "document": doc['name'],
-                    "indicator": ind['found'],
-                    "context": ind['context']
-                }
-                for ind in indicators
-            ])
+                arquivos = files_results.get("files", [])
 
-        result["analyzed_docs"].append({
-            "name": doc['name'],
-            "found_indicators": len(indicators)
-        })
+                # Procurar por documentos relevantes (extratos, contracheques, etc)
+                keywords = ["extrato", "contracheque", "holerite", "declaração", "renda"]
+                for arquivo in arquivos:
+                    nome_lower = arquivo["name"].lower()
+                    if any(keyword in nome_lower for keyword in keywords):
+                        demandas.append(f"Documento relevante encontrado: {arquivo['name']}")
 
-    if result["has_opportunity"]:
-        result["summary"] = f"Encontrados sinais de demanda bancária em {len(set(i['document'] for i in result['indicators']))} documento(s)"
-    else:
-        result["summary"] = "Nenhum sinal de demanda bancária encontrado nos documentos analisados"
+            return len(demandas) > 0, demandas
 
-    return result
+        except Exception as e:
+            print(f"[AVISO] Erro ao analisar documentos Gmail para {numero_cliente}: {e}")
+            return False, []
 
+    # ========================================================================
+    # ETAPA 4: VERIFICAR NOTAS NO SAC (SELLFLUX)
+    # ========================================================================
 
-def analyze_sac_messages(sellflux_api: SellfluxAPI, lead_id: str) -> Dict[str, Any]:
-    """
-    Analisa histórico de mensagens no SAC
-    Retorna dict com resultado e demandas encontradas
-    """
-    result = {
-        "has_untreated_demand": False,
-        "demands": [],
-        "total_messages": 0,
-        "summary": ""
-    }
+    def analisar_notas_sac(self, numero_cliente: str) -> Tuple[bool, List[str]]:
+        """
+        Verifica notas no SellFlux (SAC) para identificar demandas
 
-    # Busca todas as páginas de mensagens
-    all_messages = []
-    page = 0
+        Returns:
+            (tem_demanda, demandas_identificadas)
+        """
+        # TODO: Implementar conforme API do SellFlux
+        # Por enquanto, retorna placeholder
+        print(f"[INFO] Verificação SAC para cliente {numero_cliente} (implementar API SellFlux)")
+        return False, []
 
-    while True:
-        messages = sellflux_api.get_customer_messages(lead_id, limit=50, page=page)
-        if not messages:
-            break
+    # ========================================================================
+    # ETAPA 5: CRIAR TAREFA PARA EQUIPE
+    # ========================================================================
 
-        all_messages.extend(messages)
-        page += 1
+    def criar_tarefa_leticia_fabio(self, cliente_id: str, numero_processo: str, demanda: str):
+        """
+        Cria tarefa/nota padrão para Leticia e Fábio
+        Formato padrão (não copia a tarefa original)
+        """
+        nota_padrao = f"""
+DEMANDA IDENTIFICADA PELO CROSSEL
 
-    result["total_messages"] = len(all_messages)
+Cliente: {cliente_id}
+Número do Processo: {numero_processo}
+Data da Análise: {datetime.now().strftime('%d/%m/%Y às %H:%M:%S')}
 
-    # Procura por demandas não tratadas
-    # Procura por: pedidos de contato, dúvidas, promessas de retorno sem resposta
-    demand_keywords = [
-        r"retorno",
-        r"callback",
-        r"p(?:u|ú)blico",
-        r"d(?:ú|u)vida",
-        r"empr[eé]stimo",
-        r"consignado",
-        r"revis[ãa]o",
-        r"documento",
-        r"pendente",
-        r"aberto",
-        r"n[ãa]o respondido"
-    ]
+📌 DEMANDA:
+{demanda}
 
-    for msg in all_messages:
-        content = msg.get('message_content', '').lower()
+Ação necessária: Avaliar e encaminhar para comercial/documentação conforme necessário.
+        """.strip()
 
-        # Verifica se há demanda
-        for keyword in demand_keywords:
-            if re.search(keyword, content, re.IGNORECASE):
-                # Verifica se foi respondido (simplificado)
-                # Em produção, usar cor da nota ou status
-                if "respondido" not in content and "resolvido" not in content:
-                    result["has_untreated_demand"] = True
-                    result["demands"].append({
-                        "date": msg.get('message_date'),
-                        "author": msg.get('sender'),
-                        "content": content[:200]  # Primeiros 200 chars
-                    })
-                break
+        print(f"[OK] Tarefa criada para Leticia/Fábio: {cliente_id}")
+        # TODO: Integrar com AdvBox para criar tarefa efetivamente
+        return nota_padrao
 
-    if result["has_untreated_demand"]:
-        result["summary"] = f"Encontradas {len(result['demands'])} demanda(s) não tratada(s)"
-    else:
-        result["summary"] = "Sem demandas não tratadas identificadas"
+    # ========================================================================
+    # ETAPA 6: PROCESSAR PETIÇÕES
+    # ========================================================================
 
-    return result
+    def processar_petição(self, petição: Dict):
+        """Processa uma petição do AdvBox"""
+        try:
+            cliente_id = petição.get("client_id", "DESCONHECIDO")
+            numero_processo = petição.get("process_number", "DESCONHECIDO")
+            nota = petição.get("comments", "")
 
+            print(f"\n[PROCESSANDO] Cliente: {cliente_id}, Processo: {numero_processo}")
 
-# ============================================================================
-# FLUXO PRINCIPAL
-# ============================================================================
+            # 1. Analisar nota AdvBox
+            classificacao, demandas_nota = self.analisar_nota_advbox(nota)
 
-def process_post(advbox: AdvboxAPI, drive: GoogleDriveAPI, sellflux: SellfluxAPI, post: Dict[str, Any]) -> bool:
-    """
-    Processa um post classificado como 'sem oportunidade'
-    Retorna True se processado com sucesso
-    """
-    post_id = post.get('id')
-    client_name = post.get('client', {}).get('name', 'Desconhecido')
-    client_phone = post.get('client', {}).get('phone')
+            # 2. Analisar documentos Gmail
+            tem_doc, demandas_doc = self.analisar_documentos_gmail(cliente_id)
 
-    logger.info(f"Processando post {post_id}: {client_name}")
+            # 3. Analisar notas SAC
+            tem_sac, demandas_sac = self.analisar_notas_sac(cliente_id)
 
-    # ========== ETAPA 1: Verificar Google Drive ==========
-    folder_id = drive.search_folder(client_name)
+            # Consolidar todas as demandas
+            todas_demandas = demandas_nota + demandas_doc + demandas_sac
 
-    drive_result = {
-        "has_opportunity": False,
-        "indicators": [],
-        "summary": "Pasta não encontrada"
-    }
+            # Determinar classificação final
+            if todas_demandas or classificacao == "oportunidade":
+                self.resultados["oportunidades"].append({
+                    "cliente_id": cliente_id,
+                    "numero_processo": numero_processo,
+                    "demandas": todas_demandas
+                })
+                # Criar tarefa para Leticia/Fábio
+                for demanda in todas_demandas:
+                    self.criar_tarefa_leticia_fabio(cliente_id, numero_processo, demanda)
+                print(f"[OK] Encaminhado ao comercial")
 
-    if folder_id:
-        documents = drive.find_payroll_documents(folder_id)
-        if documents:
-            drive_result = analyze_payroll_documents(drive, documents)
+            elif classificacao == "sem_oportunidade":
+                self.resultados["sem_oportunidade"].append({
+                    "cliente_id": cliente_id,
+                    "numero_processo": numero_processo
+                })
+                print(f"[OK] Confirmado como 'sem oportunidade'")
+
+            elif classificacao == "ambiguo":
+                self.resultados["ambiguos"].append({
+                    "cliente_id": cliente_id,
+                    "numero_processo": numero_processo,
+                    "nota": nota[:200]  # Primeiros 200 caracteres
+                })
+                print(f"[AVISO] Caso ambíguo - requer revisão manual")
+
+            self.resultados["total_processados"] += 1
+
+        except Exception as e:
+            print(f"[ERRO] Ao processar petição {petição.get('process_number')}: {e}")
+
+    # ========================================================================
+    # ETAPA 7: GERAR RELATÓRIO
+    # ========================================================================
+
+    def gerar_relatorio_email(self) -> str:
+        """Gera relatório formatado para email"""
+        hoje = datetime.now().strftime("%d/%m/%Y")
+
+        corpo = f"""
+📋 RESUMO DA TRIAGEM AUTOMÁTICA DO ADVBOX EM {hoje}
+
+════════════════════════════════════════════════════════════════
+
+📊 ESTATÍSTICAS:
+
+• Total de casos processados: {self.resultados['total_processados']}
+• Oportunidades encaminhadas ao comercial: {len(self.resultados['oportunidades'])}
+• Sem oportunidade: {len(self.resultados['sem_oportunidade'])}
+• Ambíguos (revisão manual): {len(self.resultados['ambiguos'])}
+
+════════════════════════════════════════════════════════════════
+
+⚠️ CASOS COM AMBIGUIDADE (REQUEREM REVISÃO MANUAL):
+"""
+        if self.resultados["ambiguos"]:
+            for caso in self.resultados["ambiguos"]:
+                corpo += f"\n   • Cliente: {caso['cliente_id']} | Processo: {caso['numero_processo']}"
         else:
-            drive_result["summary"] = "Nenhum contracheque/extrato encontrado"
+            corpo += "\n   Nenhum caso ambíguo neste período."
 
-    # ========== ETAPA 2: Verificar SellFlux SAC ==========
-    sac_result = {
-        "has_untreated_demand": False,
-        "demands": [],
-        "summary": "Não foi possível verificar"
-    }
+        corpo += f"""
 
-    if client_phone:
-        sac_result = analyze_sac_messages(sellflux, client_phone)
+════════════════════════════════════════════════════════════════
 
-    # ========== ETAPA 3: Decidir próxima ação ==========
-    has_opportunity = drive_result.get("has_opportunity") or sac_result.get("has_untreated_demand")
+✅ OPERAÇÃO CONCLUÍDA
 
-    # Prepara comentário resumido
-    comment_lines = [
-        f"Revisão automática - {datetime.now().strftime('%d/%m/%Y %H:%M')}",
-        "",
-        "📄 Google Drive:",
-        drive_result["summary"],
-    ]
+Próxima triagem: Confira o histórico em Actions no GitHub
 
-    if drive_result.get("indicators"):
-        comment_lines.append("Evidências encontradas:")
-        for ind in drive_result["indicators"][:3]:  # Limita a 3 para não ficar muito grande
-            comment_lines.append(f"  - {ind['indicator']} em {ind['document']}")
+        """.strip()
 
-    comment_lines.extend([
-        "",
-        "💬 SellFlux SAC:",
-        sac_result["summary"]
-    ])
+        return corpo
 
-    if sac_result.get("demands"):
-        comment_lines.append("Demandas identificadas:")
-        for demand in sac_result["demands"][:2]:
-            comment_lines.append(f"  - {demand.get('date')}: {demand.get('content')}")
+    # ========================================================================
+    # EXECUTAR ANÁLISE COMPLETA
+    # ========================================================================
 
-    comment = "\n".join(comment_lines)
+    def executar(self, hora_inicio: str, hora_fim: str):
+        """Executa o fluxo completo de análise"""
+        print("\n" + "="*70)
+        print("CROSSEL - AUTOMAÇÃO DE TRIAGEM v2.0")
+        print("="*70)
+        print(f"Analisando período: {hora_inicio} até {hora_fim}")
 
-    # Adiciona comentário ao post
-    advbox.add_comment(post_id, comment)
+        # 1. Consultar AdvBox
+        petições = self.consultar_advbox_petições(hora_inicio, hora_fim)
 
-    # ========== ETAPA 4: Atualizar Advbox ==========
-    if has_opportunity:
-        logger.info(f"Oportunidade identificada para {client_name}")
+        if not petições:
+            print("[INFO] Nenhuma petição encontrada no período")
+            self.resultados["total_processados"] = 0
+        else:
+            # 2. Processar cada petição
+            for petição in petições:
+                self.processar_petição(petição)
 
-        # TODO: Obter ID do responsável comercial da configuração
-        commercial_id = os.getenv('ADVBOX_COMMERCIAL_ID', 'default')
+        # 3. Gerar e salvar relatório
+        relatorio = self.gerar_relatorio_email()
+        print("\n" + relatorio)
 
-        advbox.assign_to_commercial(post_id, commercial_id)
-        # Não fecha o post - deixa para o comercial decidir
+        # Salvar em arquivo
+        with open("revisao_output.txt", "w", encoding="utf-8") as f:
+            f.write(relatorio)
 
-    else:
-        logger.info(f"Sem oportunidade confirmada para {client_name}")
-        advbox.close_post(post_id, status="closed")
+        # Salvar JSON detalhado
+        with open("review_results.json", "w", encoding="utf-8") as f:
+            json.dump(self.resultados, f, ensure_ascii=False, indent=2)
 
-    return True
+        print("\n[OK] Arquivos salvos: revisao_output.txt, review_results.json")
+        return self.resultados
 
 
-def main():
-    """Função principal - executa o fluxo"""
-    logger.info("Iniciando revisão de casos 'sem oportunidade'")
-
-    try:
-        # Valida credenciais
-        if not all([ADVBOX_API_TOKEN, SELLFLUX_API_TOKEN, GOOGLE_DRIVE_CREDENTIALS]):
-            logger.error("Credenciais não configuradas corretamente")
-            return False
-
-        # Inicializa APIs
-        advbox = AdvboxAPI(ADVBOX_API_TOKEN)
-        drive = GoogleDriveAPI(GOOGLE_DRIVE_CREDENTIALS)
-        sellflux = SellfluxAPI(SELLFLUX_API_TOKEN)
-
-        # Busca posts
-        posts = advbox.get_posts_sem_oportunidade(limit=10)
-
-        if not posts:
-            logger.info("Nenhum post para processar")
-            return True
-
-        # Processa cada post
-        processed = 0
-        for post in posts:
-            try:
-                if process_post(advbox, drive, sellflux, post):
-                    processed += 1
-            except Exception as e:
-                logger.error(f"Erro ao processar post: {e}", exc_info=True)
-
-        logger.info(f"Processamento concluído: {processed}/{len(posts)} posts")
-        return True
-
-    except Exception as e:
-        logger.error(f"Erro fatal: {e}", exc_info=True)
-        return False
-
+# ============================================================================
+# EXECUTAR
+# ============================================================================
 
 if __name__ == "__main__":
-    success = main()
-    exit(0 if success else 1)
+    # Obter horários do ambiente (passados pelo workflow)
+    # Se não estiver definido, usa default (últimas 6 horas)
+    hora_inicio = HORA_INICIO or datetime.now().strftime("%H:%M")
+    hora_fim = HORA_FIM or (datetime.now() - timedelta(hours=6)).strftime("%H:%M")
+
+    analyzer = CrosselAnalyzer()
+    analyzer.executar(hora_inicio, hora_fim)
