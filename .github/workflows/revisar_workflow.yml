@@ -1,0 +1,111 @@
+name: Revisar posts 'sem oportunidade' do Advbox
+
+on:
+  schedule:
+    # Rodar diariamente às 9h (horário de Cuiabá = UTC-4)
+    - cron: '0 13 * * *'
+  workflow_dispatch:  # Permite rodar manualmente
+
+jobs:
+  revisar-posts:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests PyPDF2 google-cloud-drive google-auth-httplib2 google-auth-oauthlib
+
+    - name: Decodificar credenciais Google
+      run: |
+        echo "${{ secrets.GOOGLE_CREDS_BASE64 }}" | base64 -d > credentials.json
+
+    - name: Executar revisor de posts
+      env:
+        ADVBOX_API_TOKEN: ${{ secrets.ADVBOX_TOKEN }}
+        ADVBOX_API_URL: 'https://api.advbox.com.br/api'
+        GOOGLE_CREDS_JSON: 'credentials.json'
+      run: |
+        python revisar_sem_oportunidade.py > revisao_output.txt 2>&1
+
+    - name: Enviar relatório por email (SUCESSO)
+      if: success()
+      uses: dawidd6/action-send-mail@v3
+      with:
+        server_address: smtp.gmail.com
+        server_port: 465
+        username: ${{ secrets.SMTP_USER }}
+        password: ${{ secrets.SMTP_PASS }}
+        subject: '✅ Relatório Crossel - Revisão de posts sem oportunidade'
+        to: ${{ secrets.EMAIL_DESTINO }}
+        from: ${{ secrets.SMTP_USER }}
+        body: |
+          📋 RELATÓRIO CROSSEL - AUTOMAÇÃO DE TRIAGEM
+
+          Data: $(date +'%d/%m/%Y às %H:%M:%S')
+          Status: ✅ SUCESSO
+
+          ═══════════════════════════════════════════════════════════
+
+          📊 RESUMO DA EXECUÇÃO:
+
+          • Casos processados: Ver arquivo em anexo
+          • Empréstimos detectados: Confira o relatório
+          • Casos encaminhados: Verifique no Advbox
+
+          ═══════════════════════════════════════════════════════════
+
+          📋 INFORMAÇÕES POR CASO:
+
+          Para cada caso processado, confira:
+          ✓ Cliente: [Nome do cliente - será incluído no relatório JSON]
+          ✓ Número de Processo: [ID do caso - será incluído no relatório JSON]
+          ✓ Classificação: sem_oportunidade
+          ✓ Ação: Encaminhado para comercial ou mantido
+
+          ═══════════════════════════════════════════════════════════
+
+          📁 Detalhes completos em: https://github.com/${{ github.repository }}/blob/main/results/review_results.json
+
+          Para questões: Verifique o histórico de execução em Actions
+
+    - name: Enviar relatório por email (se houver erros)
+      if: failure()
+      uses: dawidd6/action-send-mail@v3
+      with:
+        server_address: smtp.gmail.com
+        server_port: 465
+        username: ${{ secrets.SMTP_USER }}
+        password: ${{ secrets.SMTP_PASS }}
+        subject: '❌ Erro ao revisar posts Advbox'
+        to: ${{ secrets.EMAIL_DESTINO }}
+        from: ${{ secrets.SMTP_USER }}
+        body: |
+          ❌ ERRO NA EXECUÇÃO
+
+          Data: $(date +'%d/%m/%Y às %H:%M:%S')
+
+          Erro durante a execução do revisor de posts 'sem oportunidade'.
+
+          Verifique o workflow em: https://github.com/${{ github.repository }}/actions
+
+          ═══════════════════════════════════════════════════════════
+
+          Para ver detalhes do erro, acesse:
+          Actions → Últimas execuções → Ver logs completos
+
+    - name: Commit dos resultados
+      if: always()
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add results/review_results.json || true
+        git commit -m "📋 Atualizar resultados da revisão de posts ($(date +'%d/%m/%Y %H:%M'))" || true
+        git push
