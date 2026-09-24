@@ -1,0 +1,12 @@
+{
+  "buildCommand": "echo 'Streamlit app - no build needed'",
+  "devCommand": "streamlit run src/app.py",
+  "env": [
+    "ADMIN_EMAIL",
+    "AUTHORIZED_EMAILS",
+    "APP_ACCESS_PASSWORD",
+    "GOOGLE_OAUTH_COOKIE_KEY",
+    "ASAAS_API_KEY",
+    "GOOGLE_OAUTH_CREDENTIALS_PATH"
+  ]
+}
