@@ -13,7 +13,7 @@ import streamlit as st
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from database import initialize_database, listar_previsoes, salvar_previsao
-from integracoes.advbox_asaas import AsaasClient, IntegrationError
+# from integracoes.advbox_asaas import AsaasClient, IntegrationError
 
 st.set_page_config(
     page_title="Hub Financeiro e Estrategico",
