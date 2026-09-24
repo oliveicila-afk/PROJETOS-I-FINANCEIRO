@@ -12,7 +12,7 @@ import streamlit as st
 # from oauthlib.oauth2.rfc6749.errors import OAuth2Error
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
-from database import initialize_database, listar_previsoes, salvar_previsao
+# from database import initialize_database, listar_previsoes, salvar_previsao
 # from integracoes.advbox_asaas import AsaasClient, IntegrationError
 
 st.set_page_config(
@@ -21,7 +21,11 @@ st.set_page_config(
     layout="wide",
 )
 
-initialize_database()
+st.title("🎯 Hub Escritório Calandrini")
+st.write("Aplicação financeira e estratégica")
+st.info("✅ App online no Streamlit Cloud!")
+
+# initialize_database()
 
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
 AUTHORIZED_EMAILS = {
