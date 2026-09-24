@@ -8,12 +8,12 @@ from pathlib import Path
 import pandas as pd
 import requests
 import streamlit as st
-# from google_auth_oauthlib.flow import Flow
-# from oauthlib.oauth2.rfc6749.errors import OAuth2Error
+from google_auth_oauthlib.flow import Flow
+from oauthlib.oauth2.rfc6749.errors import OAuth2Error
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
-# from database import initialize_database, listar_previsoes, salvar_previsao
-# from integracoes.advbox_asaas import AsaasClient, IntegrationError
+from database import initialize_database, listar_previsoes, salvar_previsao
+from integracoes.advbox_asaas import AsaasClient, IntegrationError
 
 st.set_page_config(
     page_title="Hub Financeiro e Estrategico",
@@ -21,10 +21,7 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("🎯 Hub Escritório - Teste")
-st.write("Aplicação em funcionamento!")
-
-# initialize_database()
+initialize_database()
 
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
 AUTHORIZED_EMAILS = {
