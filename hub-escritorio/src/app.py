@@ -8,16 +8,12 @@ from pathlib import Path
 import pandas as pd
 import requests
 import streamlit as st
-from dotenv import load_dotenv
 from google_auth_oauthlib.flow import Flow
 from oauthlib.oauth2.rfc6749.errors import OAuth2Error
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from database import initialize_database, listar_previsoes, salvar_previsao
 from integracoes.advbox_asaas import AsaasClient, IntegrationError
-
-
-load_dotenv(override=True)
 
 st.set_page_config(
     page_title="Hub Financeiro e Estrategico",
