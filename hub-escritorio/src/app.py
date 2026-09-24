@@ -27,15 +27,24 @@ st.set_page_config(
 
 # initialize_database()
 
-ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
+def _get_env_or_secret(key: str, default: str = "") -> str:
+    val = os.getenv(key, "")
+    if val:
+        return val
+    try:
+        return str(st.secrets.get(key, default))
+    except:
+        return default
+
+ADMIN_EMAIL = _get_env_or_secret("ADMIN_EMAIL", "")
 AUTHORIZED_EMAILS = {
     email.strip().lower()
-    for email in os.getenv("AUTHORIZED_EMAILS", "").replace(";", ",").split(",")
+    for email in _get_env_or_secret("AUTHORIZED_EMAILS", "").replace(";", ",").split(",")
     if email.strip()
 }
 if ADMIN_EMAIL:
     AUTHORIZED_EMAILS.add(ADMIN_EMAIL.strip().lower())
-APP_ACCESS_PASSWORD = os.getenv("APP_ACCESS_PASSWORD", "")
+APP_ACCESS_PASSWORD = _get_env_or_secret("APP_ACCESS_PASSWORD", "")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 GOOGLE_CREDENTIALS_PATH = PROJECT_ROOT / os.getenv("GOOGLE_OAUTH_CREDENTIALS_PATH", "google_credentials.json")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:8501")
