@@ -269,6 +269,14 @@ def verificar_seguranca() -> bool:
                 entrar = st.form_submit_button("Entrar com senha")
 
             if entrar:
+                # DEBUG
+                st.write(f"DEBUG - AUTHORIZED_EMAILS: {AUTHORIZED_EMAILS}")
+                st.write(f"DEBUG - ADMIN_EMAIL: {ADMIN_EMAIL}")
+                st.write(f"DEBUG - APP_ACCESS_PASSWORD: {'***' if APP_ACCESS_PASSWORD else 'VAZIO'}")
+                st.write(f"DEBUG - Email input: {email_input}")
+                st.write(f"DEBUG - Email autorizado: {email_autorizado(email_input)}")
+                st.write(f"DEBUG - Senha match: {hmac.compare_digest(senha_input, APP_ACCESS_PASSWORD) if APP_ACCESS_PASSWORD else False}")
+
                 credenciais_configuradas = bool(
                     AUTHORIZED_EMAILS
                     and ADMIN_EMAIL != "seu_email@gmail.com"
