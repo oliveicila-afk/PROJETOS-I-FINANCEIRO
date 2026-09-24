@@ -289,22 +289,22 @@ def verificar_seguranca() -> bool:
     return False
 
 
-def previsoes_dataframe() -> pd.DataFrame:
-    previsoes = listar_previsoes()
-    return pd.DataFrame(
-        [
-            {
-                "Processo": previsao.processo,
-                "Banco": previsao.banco,
-                "Tese": previsao.tese,
-                "Data prevista": previsao.data_prevista,
-                "Competencia": previsao.competencia,
-                "Bruto (R$)": previsao.valor_bruto,
-                "Liquido (R$)": previsao.valor_liquido,
-            }
-            for previsao in previsoes
-        ]
-    )
+# def previsoes_dataframe() -> pd.DataFrame:
+#     previsoes = listar_previsoes()
+#     return pd.DataFrame(
+#         [
+#             {
+#                 "Processo": previsao.processo,
+#                 "Banco": previsao.banco,
+#                 "Tese": previsao.tese,
+#                 "Data prevista": previsao.data_prevista,
+#                 "Competencia": previsao.competencia,
+#                 "Bruto (R$)": previsao.valor_bruto,
+#                 "Liquido (R$)": previsao.valor_liquido,
+#             }
+#             for previsao in previsoes
+#         ]
+#     )
 
 
 def formatar_moeda(valor: float) -> str:
@@ -356,14 +356,12 @@ def exibir_dashboard() -> None:
         )
 
     st.subheader("Previsoes recentes")
-    dataframe = previsoes_dataframe()
-    if dataframe.empty:
-        dataframe = pd.DataFrame(
-            [
-                {"Processo": "0001452-31.2026", "Banco": "Banco do Brasil", "Tese": "Progressao funcional", "Data prevista": "30/09/2026", "Competencia": "Setembro/2026", "Bruto (R$)": 42_000.00, "Liquido (R$)": 12_600.00},
-                {"Processo": "0000984-72.2026", "Banco": "Caixa Economica", "Tese": "Diferencas salariais", "Data prevista": "08/10/2026", "Competencia": "Outubro/2026", "Bruto (R$)": 35_800.00, "Liquido (R$)": 10_740.00},
-            ]
-        )
+    dataframe = pd.DataFrame(
+        [
+            {"Processo": "0001452-31.2026", "Banco": "Banco do Brasil", "Tese": "Progressao funcional", "Data prevista": "30/09/2026", "Competencia": "Setembro/2026", "Bruto (R$)": 42_000.00, "Liquido (R$)": 12_600.00},
+            {"Processo": "0000984-72.2026", "Banco": "Caixa Economica", "Tese": "Diferencas salariais", "Data prevista": "08/10/2026", "Competencia": "Outubro/2026", "Bruto (R$)": 35_800.00, "Liquido (R$)": 10_740.00},
+        ]
+    )
     st.dataframe(dataframe, use_container_width=True, hide_index=True)
 
 
