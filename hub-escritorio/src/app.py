@@ -327,9 +327,9 @@ def email_autorizado(email: str) -> bool:
 def exibir_dashboard() -> None:
     st.title("Dashboard")
     st.caption("Visao executiva do escritorio | dados demonstrativos")
-    previsoes = listar_previsoes()
-    total_previsto = sum(previsao.valor_liquido for previsao in previsoes) or 186_450.00
-    total_bruto = sum(previsao.valor_bruto for previsao in previsoes) or 248_900.00
+    # previsoes = listar_previsoes()
+    total_previsto = 186_450.00
+    total_bruto = 248_900.00
     recebidos = 92_780.00
     pendencias = 7
 
