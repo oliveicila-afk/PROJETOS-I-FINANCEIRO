@@ -31,16 +31,12 @@ OAUTH_AVAILABLE = False
 # load_dotenv(override=True)
 
 st.set_page_config(
-    page_title="Hub - TESTE DEBUG",
+    page_title="Hub Financeiro e Estrategico",
     page_icon="C",
     layout="wide",
 )
 
-st.title("PÁGINA DE TESTE - Redeploy funcionando?")
-
 # initialize_database()
-
-st.write("DEBUG 1: Variáveis globais")
 
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
 AUTHORIZED_EMAILS = {
@@ -51,8 +47,6 @@ AUTHORIZED_EMAILS = {
 if ADMIN_EMAIL:
     AUTHORIZED_EMAILS.add(ADMIN_EMAIL.strip().lower())
 APP_ACCESS_PASSWORD = os.getenv("APP_ACCESS_PASSWORD", "")
-
-st.write("DEBUG 2: Depois de variáveis")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 GOOGLE_CREDENTIALS_PATH = PROJECT_ROOT / os.getenv("GOOGLE_OAUTH_CREDENTIALS_PATH", "google_credentials.json")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:8501")
@@ -150,9 +144,7 @@ def aplicar_estilo() -> None:
         )
 
 
-# aplicar_estilo()
-
-st.write("✓ Página carregada com sucesso")
+aplicar_estilo()
 
 
 def marca_lateral() -> None:
@@ -262,7 +254,6 @@ def verificar_seguranca() -> bool:
         else:
             st.container(height=390, border=False)
         st.markdown("<div class='login-actions'>", unsafe_allow_html=True)
-        st.write(f"DEBUG: AUTHENTICATOR type = {type(AUTHENTICATOR)}, bool = {bool(AUTHENTICATOR)}")
         if AUTHENTICATOR:
             AUTHENTICATOR.login(justify_content="flex-start")
         else:
