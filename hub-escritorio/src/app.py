@@ -9,26 +9,16 @@ import secrets
 from datetime import date, datetime
 import pandas as pd
 import requests
+from dotenv import load_dotenv
+from google_auth_oauthlib.flow import Flow
+from oauthlib.oauth2.rfc6749.errors import OAuth2Error
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
-# OAuth desabilitado - dependências não instaláveis no Streamlit Cloud
-# from google_auth_oauthlib.flow import Flow
-# from oauthlib.oauth2.rfc6749.errors import OAuth2Error
+from database import initialize_database, listar_previsoes, salvar_previsao
+from integracoes.advbox_asaas import AsaasClient, IntegrationError
 
-# try:
-#     from google_auth_oauthlib.flow import Flow
-#     from oauthlib.oauth2.rfc6749.errors import OAuth2Error
-#     OAUTH_AVAILABLE = True
-# except ImportError as e:
-#     OAUTH_AVAILABLE = False
-#     print(f"OAuth não disponível: {e}")
 
-OAUTH_AVAILABLE = False
-
-# from database import initialize_database, listar_previsoes, salvar_previsao
-# from integracoes.advbox_asaas import AsaasClient, IntegrationError
-
-# load_dotenv(override=True)
+load_dotenv(override=True)
 
 st.set_page_config(
     page_title="Hub Financeiro e Estrategico",
@@ -36,7 +26,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# initialize_database()
+initialize_database()
 
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
 AUTHORIZED_EMAILS = {
@@ -51,12 +41,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 GOOGLE_CREDENTIALS_PATH = PROJECT_ROOT / os.getenv("GOOGLE_OAUTH_CREDENTIALS_PATH", "google_credentials.json")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:8501")
 
-@st.cache_resource
 def get_google_cookie_key() -> str:
-    key = os.getenv("GOOGLE_OAUTH_COOKIE_KEY", "") or st.secrets.get("GOOGLE_OAUTH_COOKIE_KEY", "")
-    if not key:
-        key = "b_AT2lJVv52fyAfscAZwfJNxN6e0ZZk0BsZ364831Ik"
-    return key
+    key = os.getenv("GOOGLE_OAUTH_COOKIE_KEY", "")
+    if key:
+        return key
+    try:
+        return str(st.secrets.get("GOOGLE_OAUTH_COOKIE_KEY", ""))
+    except Exception:
+        return ""
+
+
+GOOGLE_COOKIE_KEY = get_google_cookie_key()
 LOGO_PATH = PROJECT_ROOT / "assets" / "logo-calandrini.png"
 TEAM_IMAGE_PATH = PROJECT_ROOT / "assets" / "equipe-calandrini.jpg"
 SESSION_IDLE_TIMEOUT = timedelta(hours=6)
@@ -177,28 +172,86 @@ def marca_login() -> str:
 
 
 class GoogleAuthenticator:
-    def __init__(self, *args, **kwargs):
-        pass
+    scopes = [
+        "openid",
+        "https://www.googleapis.com/auth/userinfo.profile",
+        "https://www.googleapis.com/auth/userinfo.email",
+    ]
 
-    def check_authentification(self):
-        pass
+    def __init__(self, credentials_path: Path, redirect_uri: str, state_secret: str) -> None:
+        self.credentials_path = credentials_path
+        self.redirect_uri = redirect_uri
+        self.state_serializer = URLSafeTimedSerializer(state_secret, salt="hub-escritorio-oauth")
 
-    def login(self, **kwargs):
+    def _flow(self, state: str | None = None) -> Flow:
+        return Flow.from_client_secrets_file(
+            str(self.credentials_path),
+            scopes=self.scopes,
+            redirect_uri=self.redirect_uri,
+            state=state,
+            autogenerate_code_verifier=False,
+        )
+
+    def check_authentification(self) -> None:
+        if st.session_state.get("connected", False):
+            return
+
+        authorization_code = st.query_params.get("code")
+        if not authorization_code:
+            return
+
+        received_state = st.query_params.get("state")
+        try:
+            self.state_serializer.loads(str(received_state), max_age=600)
+        except (BadSignature, SignatureExpired):
+            st.query_params.clear()
+            st.error("A tentativa de login expirou ou nao pode ser validada. Inicie novamente.")
+            return
+
+        try:
+            flow = self._flow(state=str(received_state))
+            flow.fetch_token(code=authorization_code)
+            response = requests.get(
+                "https://www.googleapis.com/oauth2/v2/userinfo",
+                headers={"Authorization": f"Bearer {flow.credentials.token}"},
+                timeout=15,
+            )
+            response.raise_for_status()
+            user_info = response.json()
+        except (OAuth2Error, requests.RequestException):
+            st.query_params.clear()
+            st.error("Nao foi possivel concluir o login Google. Tente novamente.")
+            return
+
+        st.session_state["connected"] = True
+        st.session_state["user_info"] = user_info
+        st.query_params.clear()
+        st.rerun()
+
+    def login(self, *, justify_content: str = "flex-start") -> None:
+        if st.session_state.get("connected", False):
+            return
+
+        state = self.state_serializer.dumps({"nonce": secrets.token_urlsafe(24)})
+        flow = self._flow(state=state)
+        authorization_url, _ = flow.authorization_url(include_granted_scopes="true")
         st.markdown(
-            "<div style='display:flex;'>"
-            "<div style='background:#fff;color:#1f2945;border:1px solid #b39868;border-radius:3px;padding:10px 16px;font-weight:700;cursor:not-allowed;opacity:0.6;'>"
-            "Continuar com Google<br><small style=\"font-size:0.8em;opacity:0.7;\">Em desenvolvimento</small>"
-            "</div></div>",
+            f"<div style='display:flex;justify-content:{justify_content};'>"
+            f"<a href='{authorization_url}' target='_self' style='background:#fff;color:#1f2945;border:1px solid #b39868;"
+            "border-radius:3px;padding:10px 16px;font-weight:700;text-decoration:none;box-shadow:0 8px 18px rgba(7,12,29,.2);'>"
+            "Continuar com Google</a></div>",
             unsafe_allow_html=True,
         )
 
-    def logout(self):
-        pass
+    def logout(self) -> None:
+        st.session_state.pop("connected", None)
+        st.session_state.pop("user_info", None)
 
 
-@st.cache_resource
-def get_authenticator() -> GoogleAuthenticator:
-    return GoogleAuthenticator()
+def get_authenticator() -> GoogleAuthenticator | None:
+    if not GOOGLE_CREDENTIALS_PATH.is_file() or not GOOGLE_COOKIE_KEY:
+        return None
+    return GoogleAuthenticator(GOOGLE_CREDENTIALS_PATH, GOOGLE_REDIRECT_URI, GOOGLE_COOKIE_KEY)
 
 
 AUTHENTICATOR = get_authenticator()
@@ -257,13 +310,7 @@ def verificar_seguranca() -> bool:
         if AUTHENTICATOR:
             AUTHENTICATOR.login(justify_content="flex-start")
         else:
-            st.markdown(
-                "<a style='background:#fff;color:#1f2945;border:1px solid #b39868;"
-                "border-radius:3px;padding:10px 16px;font-weight:700;text-decoration:none;box-shadow:0 8px 18px rgba(7,12,29,.2);cursor:not-allowed;opacity:0.6;display:inline-block;'>"
-                "Continuar com Google</a>",
-                unsafe_allow_html=True,
-            )
-            st.info("Configure as credenciais OAuth do Google para habilitar o login.")
+            st.info("Configure google_credentials.json e GOOGLE_OAUTH_COOKIE_KEY para habilitar o login Google.")
         st.markdown("</div>", unsafe_allow_html=True)
 
         with st.expander("Acesso por senha local"):
