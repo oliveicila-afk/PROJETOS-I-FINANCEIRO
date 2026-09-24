@@ -27,11 +27,11 @@ export class SellFluxSACClient {
   private sacApiUrl: string;
 
   constructor(private config: SellFluxConfig) {
-    this.sacApiUrl = 'https://api-lp-sac.sellflux.app';
+    this.sacApiUrl = this.config.apiUrl;
   }
 
   async getCustomerHistory(customerId: string, limit = 50, page = 0): Promise<SACHistory[]> {
-    return this.get<SACHistory[]>(`/chat/note`, {
+    return this.get<SACHistory[]>(`/chat/message`, {
       limit,
       page,
       lead_id: customerId
@@ -108,7 +108,7 @@ export class SellFluxSACClient {
   }
 
   private async get<T>(endpoint: string, params?: Record<string, string | number>): Promise<T> {
-    const url = new URL(`${this.config.apiUrl}${endpoint}`);
+    const url = new URL(`${this.sacApiUrl}${endpoint}`);
 
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
@@ -119,7 +119,8 @@ export class SellFluxSACClient {
     const response = await fetch(url.toString(), {
       method: 'GET',
       headers: {
-        Authorization: `Bearer ${this.config.apiToken}`,
+        'token-user': this.config.apiToken,
+        'token-projeto': this.config.apiToken,
         'Content-Type': 'application/json'
       }
     });

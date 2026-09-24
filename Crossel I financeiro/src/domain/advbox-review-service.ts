@@ -39,9 +39,16 @@ export class AdvBoxReviewService {
     const demands = await this.lawsuitsService.getDemandsByPeriod(startDate, endDate);
     const fabioSchedule = await this.postsService.getScheduleForResponsible('Fabio');
     const leticiaSchedule = await this.postsService.getScheduleForResponsible('Leticia');
+    const financialTeamDemands = [];
 
-    const assignedDemands = demands.filter((d) => d.responsible === 'Fabio' || d.responsible === 'Leticia');
-    const demandsNotAssigned = demands.filter((d) => d.responsible !== 'Fabio' && d.responsible !== 'Leticia');
+    for (const demand of demands) {
+      if (await this.postsService.isAssignedToFinancialTeam(String(demand.id))) {
+        financialTeamDemands.push(demand);
+      }
+    }
+
+    const assignedDemands = financialTeamDemands.filter((d) => d.responsible === 'Fabio' || d.responsible === 'Leticia');
+    const demandsNotAssigned = financialTeamDemands.filter((d) => d.responsible !== 'Fabio' && d.responsible !== 'Leticia');
 
     const assignmentResults = demandsNotAssigned.map((demand) => {
       const assignee = this.selectBestAssignee(fabioSchedule, leticiaSchedule);
@@ -58,8 +65,8 @@ export class AdvBoxReviewService {
 
     return {
       period: { startDate, endDate },
-      totalDemands: demands.length,
-      demands,
+      totalDemands: financialTeamDemands.length,
+      demands: financialTeamDemands,
       fabioSchedule,
       leticiaSchedule,
       demandsNotAssigned,

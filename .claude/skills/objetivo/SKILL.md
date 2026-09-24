@@ -3,9 +3,19 @@ name: objetivo
 description: Execução obstinada de metas. Trabalha de forma autônoma no terminal e só para quando o objetivo for validado.
 ---
 
-# Execução Obstinada de Objetivos
+# Execução Obstinada de Objetivos com SMART
 
 Resolva a solicitação do usuário de ponta a ponta, mantendo o foco no resultado e sem interromper por confirmações triviais.
+
+## Definição SMART da meta
+
+Antes de agir, transforme o pedido em uma meta:
+
+- **S (Específico):** defina exatamente o que será criado, corrigido ou automatizado.
+- **M (Mensurável):** informe o comando, script ou arquivo que comprovará o sucesso.
+- **A (Atingível):** verifique as dependências e o ambiente antes de agir.
+- **R (Relevante):** mantenha a solução alinhada ao workspace e à necessidade real.
+- **T (Temporal):** conclua a tarefa nesta iteração, sem abrir escopos indefinidos.
 
 ## Protocolo de inicialização
 

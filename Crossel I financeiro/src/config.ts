@@ -30,8 +30,8 @@ export const config: Config = {
   googleServiceAccountEmail: optionalString(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL),
   googlePrivateKey: optionalString(process.env.GOOGLE_PRIVATE_KEY),
   googleDriveRootFolderId: optionalString(process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID),
-  sellfluxSacApiUrl: optionalString(process.env.SELLFLUX_SAC_API_URL) || 'https://apis.sellflux.app/api/v1',
-  sellfluxApiToken: optionalString(process.env.SELLFLUX_API_TOKEN)
+  sellfluxSacApiUrl: optionalString(process.env.SELLFLUX_SAC_API_URL) || 'https://api-lb-sac.sellflux.app',
+  sellfluxApiToken: optionalString(process.env.SELLFLUX_API_TOKEN_)
 } as const;
 
 export function getAdvBoxConfig() {
@@ -55,11 +55,11 @@ export function getGoogleDriveConfig() {
 
 export function getSellFluxSACConfig() {
   if (!config.sellfluxApiToken) {
-    throw new Error('SellFlux SAC não configurado. Configure SELLFLUX_API_TOKEN');
+    throw new Error('SellFlux SAC não configurado. Configure SELLFLUX_API_TOKEN_');
   }
 
   return {
-    apiUrl: config.sellfluxSacApiUrl || 'https://apis.sellflux.app/api/v1',
+    apiUrl: config.sellfluxSacApiUrl || 'https://api-lb-sac.sellflux.app',
     apiToken: config.sellfluxApiToken
   };
 }

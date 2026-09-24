@@ -185,6 +185,8 @@ Cria novo post/anotação para atribuição
 ### PUT /lawsuits/{id}
 Atualiza informações de um processo (responsável, estágio, etc)
 
+> Os endpoints acima precisam ser confirmados contra a documentação/conta AdvBox antes de um disparo de produção. O token sozinho não comprova que a API e os formatos de resposta estão corretos.
+
 ## 🧪 Estrutura de Código
 
 ```

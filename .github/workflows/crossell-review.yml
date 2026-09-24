@@ -2,8 +2,9 @@ name: Crossell - Revisão de Demandas Diária
 
 on:
   schedule:
-    # Executa diariamente às 08:00 UTC (05:00 Brasília)
-    - cron: '0 8 * * *'
+    # 08:00 e 15:00 no horário de Brasília (UTC-3).
+    - cron: '0 11 * * *'
+    - cron: '0 18 * * *'
   workflow_dispatch:
     inputs:
       start_date:
@@ -43,14 +44,16 @@ jobs:
         run: |
           if [ -n "${{ github.event.inputs.start_date }}" ]; then
             echo "start_date=${{ github.event.inputs.start_date }}" >> $GITHUB_OUTPUT
-          else
-            echo "start_date=$(date -d "yesterday" +%Y-%m-%d)" >> $GITHUB_OUTPUT
-          fi
-
-          if [ -n "${{ github.event.inputs.end_date }}" ]; then
             echo "end_date=${{ github.event.inputs.end_date }}" >> $GITHUB_OUTPUT
           else
-            echo "end_date=$(date +%Y-%m-%d)" >> $GITHUB_OUTPUT
+            current_hour=$(date -u +%H)
+            if [ "$current_hour" = "11" ]; then
+              start_date=$(date -u -d '17 hours ago' '+%Y-%m-%dT%H:%M:%SZ')
+            else
+              start_date=$(date -u -d '7 hours ago' '+%Y-%m-%dT%H:%M:%SZ')
+            fi
+            echo "start_date=$start_date" >> $GITHUB_OUTPUT
+            echo "end_date=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
           fi
 
       - name: Revisar demandas do período
@@ -58,6 +61,11 @@ jobs:
         env:
           ADVBOX_TOKEN: ${{ secrets.ADVBOX_TOKEN }}
           ADVBOX_API_URL: ${{ secrets.ADVBOX_API_URL || 'https://app.advbox.com.br/api/v1' }}
+          GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          GOOGLE_DRIVE_ROOT_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_ROOT_FOLDER_ID }}
+          SELLFLUX_SAC_API_URL: ${{ secrets.SELLFLUX_SAC_API_URL }}
+          SELLFLUX_API_TOKEN_: ${{ secrets.SELLFLUX_API_TOKEN_ }}
         run: npm run cli -- review-period ${{ steps.period.outputs.start_date }} ${{ steps.period.outputs.end_date }}
 
       - name: Obter agenda do Fábio

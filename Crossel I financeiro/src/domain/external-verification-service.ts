@@ -30,13 +30,13 @@ export class ExternalVerificationService {
     customerPhone?: string
   ): Promise<VerificationResult> {
     const [driveDocuments, sacAnalysis] = await Promise.all([
-      this.driveClient.searchBankDocuments(customerName).catch(() => []),
-      customerPhone ? this.sacClient.getConversationWithAnalysis(customerPhone).catch(() => null) : Promise.resolve(null)
+      this.driveClient.searchBankDocuments(customerName),
+      customerPhone ? this.sacClient.getConversationWithAnalysis(customerPhone) : Promise.resolve(null)
     ]);
 
     const opportunityIndicators: string[] = [];
 
-    if (driveDocuments.length > 0) {
+    if (driveDocuments.some((document) => /contracheque|holerite|extrato|banco|consign/i.test(document.name))) {
       opportunityIndicators.push(`Encontrados ${driveDocuments.length} documento(s) no Drive`);
     }
 

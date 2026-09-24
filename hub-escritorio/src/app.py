@@ -1,17 +1,29 @@
-import base64
-import hmac
 import os
-import secrets
-from datetime import date, datetime, timedelta
-from pathlib import Path
-
-import pandas as pd
-import requests
 import streamlit as st
-# from dotenv import load_dotenv
-# from google_auth_oauthlib.flow import Flow
-# from oauthlib.oauth2.rfc6749.errors import OAuth2Error
-from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from pathlib import Path
+from datetime import timedelta
+
+try:
+    import base64
+    import hmac
+    import secrets
+    from datetime import date, datetime
+    import pandas as pd
+    import requests
+    from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+    print("Imports bem-sucedidos")
+except Exception as e:
+    print(f"Erro ao importar: {e}")
+
+# try:
+#     from google_auth_oauthlib.flow import Flow
+#     from oauthlib.oauth2.rfc6749.errors import OAuth2Error
+#     OAUTH_AVAILABLE = True
+# except ImportError as e:
+#     OAUTH_AVAILABLE = False
+#     print(f"OAuth não disponível: {e}")
+
+OAUTH_AVAILABLE = False
 
 # from database import initialize_database, listar_previsoes, salvar_previsao
 # from integracoes.advbox_asaas import AsaasClient, IntegrationError
@@ -19,12 +31,16 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 # load_dotenv(override=True)
 
 st.set_page_config(
-    page_title="Hub Financeiro e Estrategico",
+    page_title="Hub - TESTE DEBUG",
     page_icon="C",
     layout="wide",
 )
 
+st.title("PÁGINA DE TESTE - Redeploy funcionando?")
+
 # initialize_database()
+
+st.write("DEBUG 1: Variáveis globais")
 
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
 AUTHORIZED_EMAILS = {
@@ -35,10 +51,18 @@ AUTHORIZED_EMAILS = {
 if ADMIN_EMAIL:
     AUTHORIZED_EMAILS.add(ADMIN_EMAIL.strip().lower())
 APP_ACCESS_PASSWORD = os.getenv("APP_ACCESS_PASSWORD", "")
+
+st.write("DEBUG 2: Depois de variáveis")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 GOOGLE_CREDENTIALS_PATH = PROJECT_ROOT / os.getenv("GOOGLE_OAUTH_CREDENTIALS_PATH", "google_credentials.json")
-GOOGLE_COOKIE_KEY = os.getenv("GOOGLE_OAUTH_COOKIE_KEY", "")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:8501")
+
+@st.cache_resource
+def get_google_cookie_key() -> str:
+    key = os.getenv("GOOGLE_OAUTH_COOKIE_KEY", "") or st.secrets.get("GOOGLE_OAUTH_COOKIE_KEY", "")
+    if not key:
+        key = "b_AT2lJVv52fyAfscAZwfJNxN6e0ZZk0BsZ364831Ik"
+    return key
 LOGO_PATH = PROJECT_ROOT / "assets" / "logo-calandrini.png"
 TEAM_IMAGE_PATH = PROJECT_ROOT / "assets" / "equipe-calandrini.jpg"
 SESSION_IDLE_TIMEOUT = timedelta(hours=6)
@@ -126,7 +150,9 @@ def aplicar_estilo() -> None:
         )
 
 
-aplicar_estilo()
+# aplicar_estilo()
+
+st.write("✓ Página carregada com sucesso")
 
 
 def marca_lateral() -> None:
@@ -159,89 +185,31 @@ def marca_login() -> str:
 
 
 class GoogleAuthenticator:
-    scopes = ["openid", "https://www.googleapis.com/auth/userinfo.profile", "https://www.googleapis.com/auth/userinfo.email"]
+    """Placeholder - OAuth desabilitado temporariamente"""
+    def __init__(self, *args, **kwargs):
+        pass
 
-    def __init__(self, credentials_path: Path, redirect_uri: str, state_secret: str) -> None:
-        self.credentials_path = credentials_path
-        self.redirect_uri = redirect_uri
-        self.state_serializer = URLSafeTimedSerializer(state_secret, salt="hub-escritorio-oauth")
+    def check_authentification(self):
+        pass
 
-    def _flow(self, *, state: str | None = None) -> Flow:
-        return Flow.from_client_secrets_file(
-            str(self.credentials_path),
-            scopes=self.scopes,
-            redirect_uri=self.redirect_uri,
-            state=state,
-            autogenerate_code_verifier=False,
-        )
-
-    def check_authentification(self) -> None:
-        if st.session_state.get("connected", False):
-            return
-
-        authorization_code = st.query_params.get("code")
-        if not authorization_code:
-            return
-
-        received_state = st.query_params.get("state")
-        try:
-            self.state_serializer.loads(str(received_state), max_age=600)
-        except (BadSignature, SignatureExpired):
-            st.query_params.clear()
-            st.error("A tentativa de login expirou ou nao pode ser validada. Inicie novamente.")
-            return
-
-        try:
-            flow = self._flow(state=str(received_state))
-            flow.fetch_token(code=authorization_code)
-            response = requests.get(
-                "https://www.googleapis.com/oauth2/v2/userinfo",
-                headers={"Authorization": f"Bearer {flow.credentials.token}"},
-                timeout=15,
-            )
-            response.raise_for_status()
-            user_info = response.json()
-        except (OAuth2Error, requests.RequestException):
-            st.query_params.clear()
-            st.error("Nao foi possivel concluir o login Google. Tente novamente.")
-            return
-
-        st.session_state["connected"] = True
-        st.session_state["user_info"] = user_info
-        st.query_params.clear()
-        st.rerun()
-
-    def login(self, *, justify_content: str = "flex-start") -> None:
-        if st.session_state.get("connected", False):
-            return
-
-        state = self.state_serializer.dumps({"nonce": secrets.token_urlsafe(24)})
-        flow = self._flow(state=state)
-        authorization_url, _ = flow.authorization_url(include_granted_scopes="true")
+    def login(self, **kwargs):
         st.markdown(
-            f"<div style='display:flex;justify-content:{justify_content};'>"
-            f"<a href='{authorization_url}' target='_self' style='background:#fff;color:#1f2945;border:1px solid #b39868;"
+            "<a style='background:#fff;color:#1f2945;border:1px solid #b39868;"
             "border-radius:3px;padding:10px 16px;font-weight:700;text-decoration:none;box-shadow:0 8px 18px rgba(7,12,29,.2);'>"
-            "Continuar com Google</a></div>",
+            "Continuar com Google</a>",
             unsafe_allow_html=True,
         )
 
-    def logout(self) -> None:
-        st.session_state.pop("connected", None)
-        st.session_state.pop("user_info", None)
+    def logout(self):
+        pass
 
 
-def criar_autenticador_google() -> GoogleAuthenticator | None:
-    if (
-        not GOOGLE_CREDENTIALS_PATH.is_file()
-        or not GOOGLE_COOKIE_KEY
-        or GOOGLE_COOKIE_KEY == "defina_uma_chave_aleatoria_longa"
-    ):
-        return None
-    return GoogleAuthenticator(GOOGLE_CREDENTIALS_PATH, GOOGLE_REDIRECT_URI, GOOGLE_COOKIE_KEY)
+@st.cache_resource
+def get_authenticator() -> GoogleAuthenticator:
+    return GoogleAuthenticator()
 
 
-AUTHENTICATOR = criar_autenticador_google()
+AUTHENTICATOR = get_authenticator()
 
 
 def verificar_seguranca() -> bool:
@@ -293,12 +261,19 @@ def verificar_seguranca() -> bool:
             )
         else:
             st.container(height=390, border=False)
+        st.markdown("<div class='login-actions'>", unsafe_allow_html=True)
+        st.write(f"DEBUG: AUTHENTICATOR type = {type(AUTHENTICATOR)}, bool = {bool(AUTHENTICATOR)}")
         if AUTHENTICATOR:
-            st.markdown("<div class='login-actions'>", unsafe_allow_html=True)
             AUTHENTICATOR.login(justify_content="flex-start")
-            st.markdown("</div>", unsafe_allow_html=True)
         else:
-            st.info("Configure as credenciais OAuth do Google para habilitar o login com Google.")
+            st.markdown(
+                "<a style='background:#fff;color:#1f2945;border:1px solid #b39868;"
+                "border-radius:3px;padding:10px 16px;font-weight:700;text-decoration:none;box-shadow:0 8px 18px rgba(7,12,29,.2);cursor:not-allowed;opacity:0.6;display:inline-block;'>"
+                "Continuar com Google</a>",
+                unsafe_allow_html=True,
+            )
+            st.info("Configure as credenciais OAuth do Google para habilitar o login.")
+        st.markdown("</div>", unsafe_allow_html=True)
 
         with st.expander("Acesso por senha local"):
             with st.form("form_login"):

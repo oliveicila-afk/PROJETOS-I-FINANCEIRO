@@ -66,16 +66,24 @@ npm run cli -- assign-to-leticia <lawsuit-id>
 
 1. Receber os casos financeiros e os documentos disponiveis.
 2. Classificar cada caso como oportunidade, acao bancaria, sem oportunidade ou ambiguo.
-3. Encaminhar oportunidades e acoes bancarias para Fabio ou Leticia.
-4. Marcar como urgente e importante os casos com indicio de pagamento inicial.
-5. Ignorar notas que informam `Novas oportunidades: Nenhuma` ou que nao identificam nenhuma nova oportunidade.
-6. Quando a nota negar uma demanda, revisar a pasta do cliente no Gmail/Drive e as notas do SAC antes de encerrar o caso.
-7. Gerar o relatorio diario completo, com detalhes somente dos casos ambiguos.
-8. Revisar, em cada disparo, o intervalo entre o ultimo disparo e o atual, inclusive quando atravessar a meia-noite.
+3. Considerar somente tarefas do time financeiro identificadas pelos usuarios Gabriele Nascimento, Kássia Lorena Goudinho Nunes ou Priscila de Oliveira dos Santos.
+4. Encaminhar oportunidades e acoes bancarias para Fabio ou Leticia.
+5. Marcar como urgente e importante os casos com indicio de pagamento inicial.
+6. Ignorar notas que informam `Novas oportunidades: Nenhuma` ou que nao identificam nenhuma nova oportunidade.
+7. Quando a nota negar uma demanda, revisar a pasta do cliente no Gmail/Drive e as notas do SAC antes de encerrar o caso.
+8. Gerar o relatorio diario completo, com detalhes somente dos casos ambiguos.
+9. Revisar, em cada disparo, o intervalo entre o ultimo disparo e o atual, inclusive quando atravessar a meia-noite.
 
 Ao encaminhar uma tarefa, o sistema usa uma nota padrao e nao copia o texto da tarefa analisada. Para acao bancaria, a nota contem o marcador do contracheque; para oportunidade, informa `Identificada novas oportunidades para fechamento`.
 
 Se a nota disser que nao existe demanda, mas a revisao de Gmail/Drive e SAC ainda nao tiver sido realizada, o caso permanece ambiguo para revisao e nao e descartado.
+
+## Skills operacionais
+
+Os procedimentos detalhados ficam em `.claude/skills/`:
+
+- `revisar-sem-oportunidade-advbox`: revisa contracheques e extratos no Google Drive, registra evidencias, anexa documentos e encaminha quando houver sinal de demanda bancaria.
+- `verificar-cliente-sac-sellflux`: revisa o historico do cliente no SAC do SellFlux antes de concluir um caso sem oportunidade.
 
 ## Executar
 

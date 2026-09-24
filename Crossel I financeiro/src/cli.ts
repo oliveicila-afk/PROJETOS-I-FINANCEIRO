@@ -72,11 +72,11 @@ Comandos:
         const schedule = await reviewService.getFabioSchedule();
         console.log(`\n✅ ${schedule.length} tarefas encontradas:\n`);
         schedule.forEach((task) => {
-          console.log(`  📌 ${task.title}`);
-          console.log(`     Status: ${task.status}`);
-          console.log(`     Conteúdo: ${task.content}`);
-          if (task.due_date) {
-            console.log(`     Vencimento: ${task.due_date}`);
+          console.log(`  📌 ${task.title ?? task.task ?? 'Tarefa'}`);
+          console.log(`     Status: ${task.status ?? 'não informado'}`);
+          console.log(`     Conteúdo: ${task.content ?? task.notes ?? ''}`);
+          if (task.due_date ?? task.date_deadline) {
+            console.log(`     Vencimento: ${task.due_date ?? task.date_deadline}`);
           }
           console.log('');
         });
@@ -88,11 +88,11 @@ Comandos:
         const schedule = await reviewService.getLeticiaSchedule();
         console.log(`\n✅ ${schedule.length} tarefas encontradas:\n`);
         schedule.forEach((task) => {
-          console.log(`  📌 ${task.title}`);
-          console.log(`     Status: ${task.status}`);
-          console.log(`     Conteúdo: ${task.content}`);
-          if (task.due_date) {
-            console.log(`     Vencimento: ${task.due_date}`);
+          console.log(`  📌 ${task.title ?? task.task ?? 'Tarefa'}`);
+          console.log(`     Status: ${task.status ?? 'não informado'}`);
+          console.log(`     Conteúdo: ${task.content ?? task.notes ?? ''}`);
+          if (task.due_date ?? task.date_deadline) {
+            console.log(`     Vencimento: ${task.due_date ?? task.date_deadline}`);
           }
           console.log('');
         });

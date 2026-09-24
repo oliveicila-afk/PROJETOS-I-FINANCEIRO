@@ -78,7 +78,7 @@ Exemplo:
 
 ### 1. Obter Credenciais
 
-Você já deve ter o `SELLFLUX_API_TOKEN` configurado para outras partes do projeto.
+Você já deve ter o `SELLFLUX_API_TOKEN_` configurado para outras partes do projeto.
 
 Se não tiver:
 1. Acesse a dashboard do SellFlux
@@ -86,8 +86,8 @@ Se não tiver:
 3. Copie seu token
 
 ```bash
-SELLFLUX_API_TOKEN=seu_token_aqui
-SELLFLUX_SAC_API_URL=https://apis.sellflux.app/api/v1
+SELLFLUX_API_TOKEN_=seu_token_aqui
+SELLFLUX_SAC_API_URL=https://api-lb-sac.sellflux.app
 ```
 
 ### 2. Verificar Acesso ao SAC
@@ -150,25 +150,6 @@ npm run cli -- verify-with-drive-sac 0001234-56.2026.8.11.0001 "João Silva" "+5
 1. Verifique se compartilhou a pasta corretamente
 2. Tente compartilhar com permissão de "Editor" em vez de "Viewer"
 3. Verifique o email do Service Account
-
-### "JWT signing não implementado"
-
-**Causa:** A biblioteca crypto do Node.js não está sendo usada corretamente
-
-**Solução:**
-Será necessário usar uma biblioteca como `jsonwebtoken` para assinar tokens JWT:
-
-```bash
-npm install jsonwebtoken
-```
-
-E atualizar o código:
-
-```typescript
-import jwt from 'jsonwebtoken';
-
-const token = jwt.sign(payload, this.config.privateKey, { algorithm: 'RS256' });
-```
 
 ### "SellFlux SAC API error: 404"
 

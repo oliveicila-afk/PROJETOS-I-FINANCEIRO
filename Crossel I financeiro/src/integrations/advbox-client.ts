@@ -4,10 +4,14 @@ export type AdvBoxConfig = {
 };
 
 export type AdvBoxResponse<T> = {
-  success: boolean;
+  success?: boolean;
   message?: string;
   data?: T;
   errors?: string[];
+  offset?: number;
+  limit?: number;
+  totalCount?: number;
+  query?: Record<string, unknown>;
 };
 
 export class AdvBoxClient {
@@ -40,11 +44,11 @@ export class AdvBoxClient {
     }
 
     const data = await response.json() as AdvBoxResponse<T>;
-    if (!data.success) {
+    if (data.success === false) {
       throw new Error(`AdvBox API error: ${data.message || data.errors?.join(', ')}`);
     }
 
-    return data.data as T;
+    return data.data !== undefined ? data.data : data as T;
   }
 
   async post<T>(endpoint: string, body: Record<string, unknown>): Promise<T> {
@@ -62,11 +66,11 @@ export class AdvBoxClient {
     }
 
     const data = await response.json() as AdvBoxResponse<T>;
-    if (!data.success) {
+    if (data.success === false) {
       throw new Error(`AdvBox API error: ${data.message || data.errors?.join(', ')}`);
     }
 
-    return data.data as T;
+    return data.data !== undefined ? data.data : data as T;
   }
 
   async put<T>(endpoint: string, body: Record<string, unknown>): Promise<T> {
@@ -84,10 +88,10 @@ export class AdvBoxClient {
     }
 
     const data = await response.json() as AdvBoxResponse<T>;
-    if (!data.success) {
+    if (data.success === false) {
       throw new Error(`AdvBox API error: ${data.message || data.errors?.join(', ')}`);
     }
 
-    return data.data as T;
+    return data.data !== undefined ? data.data : data as T;
   }
 }
