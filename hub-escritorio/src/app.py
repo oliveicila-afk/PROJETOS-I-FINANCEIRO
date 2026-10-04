@@ -443,11 +443,14 @@ def exibir_tickets() -> None:
 
     kpis = calcular_kpis(dataframe)
 
+    # Ler dados da planilha
+    dados_excel = ler_dados_excel()
+
     st.markdown("<div style='margin: 1.5rem 0;'></div>", unsafe_allow_html=True)
 
     kpis_data = [
-        ("Processos", f"{kpis['processos']:,}".replace(",", "."), "Com número CNJ"),
-        ("Pendentes", f"{kpis['pendentes']:,}".replace(",", "."), "Sem data de encerramento"),
+        ("Processos", f"{dados_excel['processos_em_andamento']:,}".replace(",", "."), "Em andamento"),
+        ("Pendentes", f"{dados_excel.get('processos_pendentes', 0):,}".replace(",", "."), "Não ingressados"),
         ("Ticket Médio", _formatar_reais(kpis["ticket_medio"]), "Média dos honorários"),
         ("Base Comercial", _formatar_reais(kpis["ticket_base"]), "Valor da causa indisponível na API"),
         ("Expectativa", _formatar_reais(kpis["expectativa"]), "Honorários em aberto"),
