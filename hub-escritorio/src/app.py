@@ -511,7 +511,7 @@ def ler_dados_excel() -> dict:
 
         return {
             "processos_em_andamento": ws_dados["B2"].value or 0,
-            "processos_pendentes": ws_dados["B4"].value or 0,
+            "processos_pendentes": ws_dados["B3"].value or 0,
             "total_processos": ws_controle["B3"].value or 0,
             "atualizado_em": ws_controle["B2"].value or "Não atualizado"
         }
