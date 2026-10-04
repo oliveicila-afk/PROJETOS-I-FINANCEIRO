@@ -26,6 +26,58 @@ class ExcelExporter:
         self.spreadsheet_path = Path(spreadsheet_path)
         self.spreadsheet_path.parent.mkdir(parents=True, exist_ok=True)
 
+    def _calcular_ticket_medio(self, processos: list[dict]) -> float:
+        """
+        Calcula Ticket Médio conforme fórmula do Power BI:
+        1. Filtra: step="ARQUIVAMENTO" + stage="GANHO/PERDIDO" + fees_money>0
+        2. Remove duplicatas (processo único)
+        3. Pega MAIOR fees_money por processo
+        4. Calcula MÉDIA
+        """
+        # 1. Filtrar processos
+        base_filtrada = []
+        for p in processos:
+            if not isinstance(p, dict):
+                continue
+
+            step = str(p.get("step", "")).upper()
+            stage = str(p.get("stage", "")).upper()
+            fees = p.get("fees_money", 0)
+            process_number = p.get("process_number")
+
+            # Validar critérios
+            if (
+                "ARQUIVAMENTO" in step
+                and ("PROCESSO GANHO" in stage or "PROCESSO PERDIDO" in stage)
+                and fees and float(fees) > 0
+                and process_number
+            ):
+                base_filtrada.append(p)
+
+        if not base_filtrada:
+            return 0.0
+
+        # 2. Remover duplicatas e pegar maior valor por processo
+        processos_unicos = {}
+        for p in base_filtrada:
+            process_number = p.get("process_number")
+            fees = float(p.get("fees_money", 0))
+
+            # Guardar o maior valor para cada processo
+            if process_number not in processos_unicos:
+                processos_unicos[process_number] = fees
+            else:
+                processos_unicos[process_number] = max(processos_unicos[process_number], fees)
+
+        # 3. Calcular média
+        if not processos_unicos:
+            return 0.0
+
+        valores = list(processos_unicos.values())
+        ticket_medio = sum(valores) / len(valores)
+
+        return round(ticket_medio, 2)
+
     def _criar_planilha_vazia(self) -> openpyxl.Workbook:
         """Cria uma nova planilha com estrutura inicial."""
         wb = openpyxl.Workbook()
@@ -95,6 +147,9 @@ class ExcelExporter:
         arquivados = len(processos_arquivados)
         processos_validos = processos_em_andamento + processos_arquivados + processos_pendentes
 
+        # Calcular Ticket Médio (conforme fórmula do Power BI)
+        ticket_medio = self._calcular_ticket_medio(processos)
+
         # Carregar ou criar planilha
         if self.spreadsheet_path.exists():
             wb = openpyxl.load_workbook(self.spreadsheet_path)
@@ -125,10 +180,15 @@ class ExcelExporter:
         ws_dados["A4"].alignment = Alignment(horizontal="left")
         ws_dados["B4"].alignment = Alignment(horizontal="center")
 
-        ws_dados["A5"] = "Total de Processos"
-        ws_dados["B5"] = len(processos)
+        ws_dados["A5"] = "Ticket Médio"
+        ws_dados["B5"] = ticket_medio
         ws_dados["A5"].alignment = Alignment(horizontal="left")
         ws_dados["B5"].alignment = Alignment(horizontal="center")
+
+        ws_dados["A6"] = "Total de Processos"
+        ws_dados["B6"] = len(processos)
+        ws_dados["A6"].alignment = Alignment(horizontal="left")
+        ws_dados["B6"].alignment = Alignment(horizontal="center")
 
         # Registrar última atualização
         for row in ws_controle.iter_rows(min_row=2):
@@ -155,6 +215,7 @@ class ExcelExporter:
             "processos_em_andamento": em_andamento,
             "processos_arquivados": arquivados,
             "processos_pendentes": pendentes,
+            "ticket_medio": ticket_medio,
             "total_com_cnj_valido": len(processos_validos),
             "total_api": len(processos),
             "atualizado_em": ws_controle["B2"].value,
@@ -181,6 +242,7 @@ if __name__ == "__main__":
         print(f"   Processos em Andamento: {resultado['processos_em_andamento']}")
         print(f"   Processos Arquivados: {resultado['processos_arquivados']}")
         print(f"   Processos Pendentes: {resultado['processos_pendentes']}")
+        print(f"   Ticket Médio: R$ {resultado['ticket_medio']:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
         print(f"   Total com CNJ válido: {resultado['total_com_cnj_valido']}")
         print(f"   Total da API: {resultado['total_api']}")
         print(f"   Atualizado em: {resultado['atualizado_em']}")
