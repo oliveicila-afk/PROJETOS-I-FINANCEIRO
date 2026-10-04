@@ -850,12 +850,12 @@ if verificar_seguranca():
     st.sidebar.caption("GOVERNANCA DO ESCRITORIO")
     st.sidebar.success(f"Conectado como:\n**{st.session_state['usuario']}**")
     st.sidebar.caption("NAVEGACAO PRINCIPAL")
-    opcoes_menu = ["Dashboard", "Tickets", "Ticket Médio", "Contadoria", "Configuracoes"]
+    opcoes_menu = ["Processos", "Dashboard", "Tickets", "Contadoria", "Configuracoes"]
     if st.session_state.get("menu_atual") not in opcoes_menu:
-        st.session_state["menu_atual"] = "Tickets"
+        st.session_state["menu_atual"] = "Processos"
 
     for opcao in opcoes_menu:
-        icone = {"Dashboard": "▦", "Tickets": "◫", "Ticket Médio": "◊", "Contadoria": "▤", "Configuracoes": "⚙"}[opcao]
+        icone = {"Processos": "📊", "Dashboard": "▦", "Tickets": "◫", "Contadoria": "▤", "Configuracoes": "⚙"}[opcao]
         rotulo = f"{icone}  {opcao}"
         if st.sidebar.button(rotulo, key=f"menu_{opcao}", type="primary" if st.session_state["menu_atual"] == opcao else "secondary"):
             st.session_state["menu_atual"] = opcao
@@ -870,8 +870,6 @@ if verificar_seguranca():
         exibir_dashboard()
     elif menu == "Tickets":
         exibir_tickets()
-    elif menu == "Ticket Médio":
-        exibir_ticket_medio()
     elif menu == "Contadoria":
         exibir_contadoria()
     else:
