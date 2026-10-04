@@ -419,6 +419,37 @@ def exibir_tickets() -> None:
     st.title("Tickets")
     st.caption("Analise de honorarios por tese juridica — Processos Arquivados · Advbox CRM")
 
+    # Seção: Processos em Andamento
+    st.markdown("<div style='margin: 2rem 0; border-top: 1px solid rgba(124, 170, 216, 0.22);'></div>", unsafe_allow_html=True)
+    st.subheader("📊 Processos em Andamento")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔄 Atualizar dados do Advbox", key="atualizar_excel_tickets"):
+            api_key = _get_env_or_secret("ADVBOX_API_KEY") or _get_env_or_secret("ADVBOX_TOKEN")
+            if not api_key:
+                st.error("ADVBOX_API_KEY não configurada nos secrets/env")
+            else:
+                try:
+                    with st.spinner("Exportando dados do Advbox para planilha..."):
+                        resultado = exportar_agora(api_key)
+                    st.success(f"✅ Atualizado com sucesso!")
+                    st.json(resultado)
+                except Exception as e:
+                    st.error(f"❌ Erro: {str(e)}")
+
+    dados = ler_dados_excel()
+    col_m, col_p, col_a = st.columns(3)
+    with col_m:
+        st.metric("Em Andamento", dados["processos_em_andamento"], "Lido da planilha")
+    with col_p:
+        st.metric("Pendentes", dados.get("processos_pendentes", 0), "Não ingressados")
+    with col_a:
+        st.metric("Última Atualização", dados["atualizado_em"], "Status")
+
+    st.markdown("<div style='margin: 2rem 0; border-top: 1px solid rgba(124, 170, 216, 0.22);'></div>", unsafe_allow_html=True)
+    st.subheader("📈 Análise de Honorários")
+
     api_key = _get_env_or_secret("ADVBOX_API_KEY") or _get_env_or_secret("ADVBOX_TOKEN")
     base_url = _get_env_or_secret("ADVBOX_API_URL", "https://app.advbox.com.br/api/v1")
 
@@ -850,12 +881,12 @@ if verificar_seguranca():
     st.sidebar.caption("GOVERNANCA DO ESCRITORIO")
     st.sidebar.success(f"Conectado como:\n**{st.session_state['usuario']}**")
     st.sidebar.caption("NAVEGACAO PRINCIPAL")
-    opcoes_menu = ["Processos", "Dashboard", "Tickets", "Contadoria", "Configuracoes"]
+    opcoes_menu = ["Dashboard", "Tickets", "Contadoria", "Configuracoes"]
     if st.session_state.get("menu_atual") not in opcoes_menu:
-        st.session_state["menu_atual"] = "Processos"
+        st.session_state["menu_atual"] = "Tickets"
 
     for opcao in opcoes_menu:
-        icone = {"Processos": "📊", "Dashboard": "▦", "Tickets": "◫", "Contadoria": "▤", "Configuracoes": "⚙"}[opcao]
+        icone = {"Dashboard": "▦", "Tickets": "◫", "Contadoria": "▤", "Configuracoes": "⚙"}[opcao]
         rotulo = f"{icone}  {opcao}"
         if st.sidebar.button(rotulo, key=f"menu_{opcao}", type="primary" if st.session_state["menu_atual"] == opcao else "secondary"):
             st.session_state["menu_atual"] = opcao
@@ -864,9 +895,7 @@ if verificar_seguranca():
     menu = st.session_state["menu_atual"]
     cabecalho_painel()
 
-    if menu == "Processos":
-        exibir_processos()
-    elif menu == "Dashboard":
+    if menu == "Dashboard":
         exibir_dashboard()
     elif menu == "Tickets":
         exibir_tickets()
