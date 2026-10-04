@@ -502,7 +502,7 @@ def ler_dados_excel() -> dict:
     caminho_arquivo = PROJECT_ROOT / "data" / "TICKET.xlsx"
 
     if not caminho_arquivo.exists():
-        return {"processos_em_andamento": 0, "total_processos": 0, "atualizado_em": "Não atualizado"}
+        return {"processos_em_andamento": 0, "processos_pendentes": 0, "total_processos": 0, "atualizado_em": "Não atualizado"}
 
     try:
         wb = openpyxl.load_workbook(caminho_arquivo)
@@ -511,11 +511,12 @@ def ler_dados_excel() -> dict:
 
         return {
             "processos_em_andamento": ws_dados["B2"].value or 0,
+            "processos_pendentes": ws_dados["B4"].value or 0,
             "total_processos": ws_controle["B3"].value or 0,
             "atualizado_em": ws_controle["B2"].value or "Não atualizado"
         }
     except Exception:
-        return {"processos_em_andamento": 0, "total_processos": 0, "atualizado_em": "Erro ao ler"}
+        return {"processos_em_andamento": 0, "processos_pendentes": 0, "total_processos": 0, "atualizado_em": "Erro ao ler"}
 
 
 def exibir_ticket_medio() -> None:
