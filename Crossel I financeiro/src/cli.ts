@@ -1,6 +1,9 @@
+import { readFile } from 'node:fs/promises';
+import { basename } from 'node:path';
 import { AdvBoxClient } from './integrations/advbox-client.js';
 import { AdvBoxReviewService } from './domain/advbox-review-service.js';
-import { getAdvBoxConfig } from './config.js';
+import { GoogleDriveClient } from './integrations/google-drive-client.js';
+import { getAdvBoxConfig, getGoogleDriveConfig } from './config.js';
 
 async function formatDate(date: Date): Promise<string> {
   return date.toISOString().split('T')[0];
@@ -44,16 +47,37 @@ Comandos:
 
   assign-to-leticia <id-processo>
     Atribui uma demanda para a Leticia
+
+  upload-drive <id-pasta> <caminho-arquivo> [nome] [mime-type]
+    Envia um documento para uma pasta do Google Drive
       `);
       return;
     }
 
-    const config = getAdvBoxConfig();
-    const client = new AdvBoxClient(config);
-    const reviewService = new AdvBoxReviewService(client);
-
     switch (command) {
+      case 'upload-drive': {
+        if (args.length < 2) {
+          console.error('❌ Erro: upload-drive requer ID da pasta e caminho do arquivo');
+          process.exit(1);
+        }
+
+        const driveClient = new GoogleDriveClient(getGoogleDriveConfig());
+        const filePath = args[1];
+        const fileName = args[2] || basename(filePath);
+        const mimeType = args[3] || 'application/octet-stream';
+        const content = await readFile(filePath);
+        const uploaded = await driveClient.uploadFile(args[0], fileName, content, mimeType);
+
+        console.log(`✅ Arquivo enviado para o Drive: ${uploaded.name}`);
+        console.log(`   ID: ${uploaded.id}`);
+        console.log(`   Link: ${uploaded.webViewLink || '(indisponível)'}`);
+        break;
+      }
+
       case 'review-period': {
+        const config = getAdvBoxConfig();
+        const client = new AdvBoxClient(config);
+        const reviewService = new AdvBoxReviewService(client);
         if (args.length < 2) {
           console.error('❌ Erro: review-period requer data inicial e final (YYYY-MM-DD)');
           process.exit(1);
@@ -68,6 +92,9 @@ Comandos:
       }
 
       case 'fabio-schedule': {
+        const config = getAdvBoxConfig();
+        const client = new AdvBoxClient(config);
+        const reviewService = new AdvBoxReviewService(client);
         console.log('📅 Buscando agenda do Fábio...');
         const schedule = await reviewService.getFabioSchedule();
         console.log(`\n✅ ${schedule.length} tarefas encontradas:\n`);
@@ -84,6 +111,9 @@ Comandos:
       }
 
       case 'leticia-schedule': {
+        const config = getAdvBoxConfig();
+        const client = new AdvBoxClient(config);
+        const reviewService = new AdvBoxReviewService(client);
         console.log('📅 Buscando agenda da Leticia...');
         const schedule = await reviewService.getLeticiaSchedule();
         console.log(`\n✅ ${schedule.length} tarefas encontradas:\n`);
@@ -100,6 +130,9 @@ Comandos:
       }
 
       case 'fabio-demands': {
+        const config = getAdvBoxConfig();
+        const client = new AdvBoxClient(config);
+        const reviewService = new AdvBoxReviewService(client);
         console.log('📋 Buscando demandas ativas do Fábio...');
         const demands = await reviewService.getFabioActiveDemands();
         console.log(`\n✅ ${demands.length} demandas encontradas:\n`);
@@ -114,6 +147,9 @@ Comandos:
       }
 
       case 'leticia-demands': {
+        const config = getAdvBoxConfig();
+        const client = new AdvBoxClient(config);
+        const reviewService = new AdvBoxReviewService(client);
         console.log('📋 Buscando demandas ativas da Leticia...');
         const demands = await reviewService.getLeticiaActiveDemands();
         console.log(`\n✅ ${demands.length} demandas encontradas:\n`);
@@ -128,6 +164,9 @@ Comandos:
       }
 
       case 'assign-to-fabio': {
+        const config = getAdvBoxConfig();
+        const client = new AdvBoxClient(config);
+        const reviewService = new AdvBoxReviewService(client);
         if (args.length < 1) {
           console.error('❌ Erro: assign-to-fabio requer ID do processo');
           process.exit(1);
@@ -145,6 +184,9 @@ Comandos:
       }
 
       case 'assign-to-leticia': {
+        const config = getAdvBoxConfig();
+        const client = new AdvBoxClient(config);
+        const reviewService = new AdvBoxReviewService(client);
         if (args.length < 1) {
           console.error('❌ Erro: assign-to-leticia requer ID do processo');
           process.exit(1);

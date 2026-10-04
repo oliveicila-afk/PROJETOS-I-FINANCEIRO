@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+coverage/
+*.json
+!package.json
+!package-lock.json
+*service-account*.json
+*credentials*.json

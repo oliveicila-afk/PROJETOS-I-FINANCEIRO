@@ -9,15 +9,26 @@ import secrets
 from datetime import date, datetime
 import pandas as pd
 import requests
+import altair as alt
+from dotenv import load_dotenv
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from integracoes.advbox_asaas import AdvboxClient, IntegrationError
+from ticket_medio import (
+    distribuicao_por_faixa,
+    distribuicao_resultado,
+    calcular_kpis,
+    processos_por_fase,
+    tabela_por_tese,
+    valores_por_fase,
+)
+from sample_data import gerar_dados_amostra
+from integracoes.excel_export import exportar_agora
 
 # Dependências desabilitadas - não funcionam no Streamlit Cloud
-# from dotenv import load_dotenv
 # from google_auth_oauthlib.flow import Flow
 # from oauthlib.oauth2.rfc6749.errors import OAuth2Error
 # from database import initialize_database, listar_previsoes, salvar_previsao
-# from integracoes.advbox_asaas import AsaasClient, IntegrationError
-# load_dotenv(override=True)
+# from integracoes.advbox_asaas import AsaasClient
 
 st.set_page_config(
     page_title="Hub Financeiro e Estrategico",
@@ -26,6 +37,9 @@ st.set_page_config(
 )
 
 # initialize_database()
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(PROJECT_ROOT / ".env")
 
 def _get_env_or_secret(key: str, default: str = "") -> str:
     val = os.getenv(key, "")
@@ -45,7 +59,6 @@ AUTHORIZED_EMAILS = {
 if ADMIN_EMAIL:
     AUTHORIZED_EMAILS.add(ADMIN_EMAIL.strip().lower())
 APP_ACCESS_PASSWORD = _get_env_or_secret("APP_ACCESS_PASSWORD", "")
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
 GOOGLE_CREDENTIALS_PATH = PROJECT_ROOT / os.getenv("GOOGLE_OAUTH_CREDENTIALS_PATH", "google_credentials.json")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:8501")
 
@@ -80,33 +93,70 @@ def aplicar_estilo() -> None:
             --line: #ded7c9;
         }
 
-        .stApp { background-color: #101e34; background-position: right center; background-repeat: no-repeat; background-size: 50% 100%; color: #f8f7f3; font-family: 'DM Sans', sans-serif; }
+        .stApp { background: linear-gradient(180deg, #071a2d 0%, #0b1d32 100%); background-position: right center; background-repeat: no-repeat; background-size: 50% 100%; color: #edf4ff; font-family: 'DM Sans', sans-serif; }
         #MainMenu, footer, header { visibility: hidden; }
-        .block-container { max-width: 1360px; padding: 2.4rem 3.2rem 3.5rem; position: relative; z-index: 1; }
-        h1, h2, h3 { font-family: 'Cormorant Garamond', serif !important; color: #ffffff !important; }
-        h1 { font-size: 2.65rem !important; font-weight: 600 !important; letter-spacing: 0 !important; }
-        h2 { font-size: 2rem !important; font-weight: 600 !important; }
-        h3 { font-size: 1.5rem !important; }
+        .block-container { max-width: 1280px; padding: 2rem 2.5rem 3rem; position: relative; z-index: 1; }
+        h1, h2, h3 { font-family: 'DM Sans', sans-serif !important; color: #edf4ff !important; }
+        h1 { font-size: 2.15rem !important; font-weight: 800 !important; letter-spacing: 0 !important; }
+        h2 { font-size: 1.7rem !important; font-weight: 700 !important; }
+        h3 { font-size: 1.3rem !important; }
         p, label, [data-testid="stMarkdownContainer"] { letter-spacing: 0 !important; }
 
-        [data-testid="stSidebar"] { background: #171f38; border-right: 1px solid rgba(179,152,104,.55); }
-        [data-testid="stSidebar"] * { color: #f8f7f3 !important; }
-        [data-testid="stSidebar"] [data-baseweb="select"] > div { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.2); }
-        [data-testid="stSidebar"] .stAlert { background: rgba(179,152,104,.16); border: 1px solid rgba(179,152,104,.45); }
-        [data-testid="stSidebar"] [data-testid="stButton"] > button { width: 100%; justify-content: flex-start; background: transparent; border: 1px solid transparent; border-radius: 3px; color: #f8f7f3; box-shadow: none; padding: .55rem .7rem; }
-        [data-testid="stSidebar"] [data-testid="stButton"] > button:hover { background: rgba(179,152,104,.16); border-color: rgba(179,152,104,.5); color: #ffffff; }
+        [data-testid="stSidebar"] { background: #0c1d34; border-right: 1px solid rgba(124, 170, 216, 0.35); }
+        [data-testid="stSidebar"] * { color: #edf4ff !important; }
+        [data-testid="stSidebar"] [data-baseweb="select"] > div { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.15); }
+        [data-testid="stSidebar"] .stAlert { background: rgba(179,152,104,.12); border: 1px solid rgba(179,152,104,.35); }
+        [data-testid="stSidebar"] [data-testid="stButton"] > button { width: 100%; justify-content: flex-start; background: transparent; border: 1px solid transparent; border-radius: 8px; color: #edf4ff; box-shadow: none; padding: .75rem .8rem; font-weight: 600; }
+        [data-testid="stSidebar"] [data-testid="stButton"] > button:hover { background: rgba(122, 169, 219, 0.08); border-color: rgba(122, 169, 219, 0.25); color: #ffffff; }
 
-        [data-testid="stMetric"] { background: #fdfdfb; border: 1px solid rgba(179,152,104,.7); border-top: 4px solid var(--gold); border-radius: 3px; padding: 1.15rem 1.25rem; min-height: 122px; box-shadow: 0 10px 22px rgba(7,12,29,.14); }
-        [data-testid="stMetricLabel"] { color: #5f6574; font-size: .82rem; font-weight: 700; text-transform: uppercase; }
-        [data-testid="stMetricValue"] { color: var(--navy); font-family: 'Cormorant Garamond', serif; font-size: 2rem; font-weight: 700; }
-        [data-testid="stMetricDelta"] svg { fill: #2e7d5b; }
+        [data-testid="stMetric"] { background: rgba(14, 31, 50, 0.9); border: 1px solid rgba(124, 170, 216, 0.22); border-radius: 12px; padding: 1.1rem 1.2rem; min-height: 118px; box-shadow: 0 10px 24px rgba(1, 4, 8, 0.2); }
+        [data-testid="stMetricLabel"] { color: rgba(237,244,255,0.72); font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08rem; }
+        [data-testid="stMetricValue"] { color: #edf4ff; font-size: 2rem; font-weight: 800; }
+        [data-testid="stMetricDelta"] svg { fill: #5ad39d; }
 
-        .stButton > button, [data-testid="stFormSubmitButton"] > button { background: var(--gold); border: 1px solid var(--gold); border-radius: 3px; color: var(--navy-deep); font-family: 'DM Sans', sans-serif; font-weight: 700; min-height: 2.65rem; }
-        .stButton > button:hover, [data-testid="stFormSubmitButton"] > button:hover { background: #d1b887; border-color: #d1b887; color: var(--navy-deep); }
-        [data-testid="stTextInput"] input, [data-baseweb="select"] > div, [data-testid="stDateInput"] input, [data-testid="stNumberInput"] input { background: #fff; border-color: #c7c1b5; border-radius: 4px; }
-        [data-testid="stDataFrame"] { border: 1px solid rgba(179,152,104,.75); border-radius: 3px; overflow: hidden; background: white; }
-        details { background: #fff; border: 1px solid rgba(179,152,104,.75); border-radius: 3px; color: var(--ink); max-width: 390px; }
-        [data-testid="stAlert"] { border-radius: 3px; }
+        .stButton > button, [data-testid="stFormSubmitButton"] > button { background: #8dd9c5; border: 1px solid #8dd9c5; border-radius: 8px; color: #062235; font-family: 'DM Sans', sans-serif; font-weight: 700; min-height: 2.65rem; }
+        .stButton > button:hover, [data-testid="stFormSubmitButton"] > button:hover { background: #9fe9d6; border-color: #9fe9d6; color: #062235; }
+        [data-testid="stTextInput"] input, [data-baseweb="select"] > div, [data-testid="stDateInput"] input, [data-testid="stNumberInput"] input { background: rgba(255,255,255,.04); border-color: rgba(124, 170, 216, 0.28); color: #edf4ff; border-radius: 8px; }
+        [data-testid="stDataFrame"] { border: 1px solid rgba(124, 170, 216, 0.25); border-radius: 12px; overflow: hidden; background: rgba(12, 29, 52, 0.9); }
+        details { background: rgba(12,29,52,0.9); border: 1px solid rgba(124, 170, 216, 0.25); border-radius: 8px; color: #edf4ff; max-width: 390px; }
+        [data-testid="stAlert"] { border-radius: 8px; }
+
+        .ticket-toolbar { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin: 1.2rem 0 .8rem; }
+        .ticket-section-label { color: #edf4ff; font-size: 1.2rem; font-weight: 800; letter-spacing: .08rem; text-transform: uppercase; }
+        .ticket-count { color: rgba(237,244,255,0.68); font-size: .74rem; font-weight: 700; letter-spacing: .06rem; text-transform: uppercase; }
+        .ticket-list { display: grid; gap: 1rem; }
+        .ticket-card { background: linear-gradient(180deg, rgba(11, 28, 46, 0.98), rgba(12, 30, 48, 0.98)); border: 1px solid rgba(120, 177, 220, 0.36); border-radius: 14px; box-shadow: 0 8px 20px rgba(1, 4, 8, 0.18); padding: 1.1rem 1.2rem 1rem; }
+        .ticket-card:hover { border-color: rgba(141,217,197,0.45); box-shadow: 0 12px 26px rgba(1, 4, 8, 0.25); }
+        .ticket-card-head, .ticket-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+        .ticket-card-head { margin-bottom: .6rem; }
+        .ticket-card-footer { margin-top: 0.9rem; }
+        .ticket-id { color: #8dd9c5; font-size: 1rem; font-weight: 800; letter-spacing: .06rem; }
+        .ticket-updated { color: rgba(237,244,255,0.72); font-size: .8rem; white-space: nowrap; }
+        .ticket-subject { color: #edf4ff; font-size: 2.1rem; font-weight: 800; line-height: 1.15; margin: 0 0 .9rem; }
+        .ticket-value-box { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem .9rem; background: rgba(32, 58, 80, 0.6); border: 1px solid rgba(122, 165, 204, 0.34); border-radius: 12px; }
+        .ticket-label { color: rgba(237,244,255,0.7); font-size: .7rem; font-weight: 800; letter-spacing: .12rem; text-transform: uppercase; }
+        .ticket-value { color: #edf4ff; font-size: 2.05rem; font-weight: 800; line-height: 1.1; }
+        .ticket-meta { color: rgba(237,244,255,0.8); font-size: 1.04rem; font-weight: 600; }
+        .ticket-badge { border-radius: 8px; display: inline-block; font-size: .72rem; font-weight: 800; letter-spacing: .05rem; padding: .35rem .7rem; text-transform: none; }
+        .ticket-priority-high { background: rgba(255, 104, 94, 0.16); color: #ff9186; }
+        .ticket-priority-medium { background: rgba(255, 191, 74, 0.15); color: #f0c05d; }
+        .ticket-priority-low { background: rgba(93, 211, 157, 0.14); color: #7ce1b0; }
+        .ticket-status { background: rgba(124, 170, 216, 0.12); color: #cfe6ff; }
+        .ticket-status-done { background: rgba(93, 211, 157, 0.12); color: #8fe9bc; }
+        .ticket-status-highlight { background: rgba(113, 206, 170, 0.15); color: #94efca; }
+        .ticket-summary-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: .75rem; margin: 1rem 0 1.25rem; }
+        .ticket-summary-card { background: linear-gradient(180deg, rgba(13,31,52,0.95), rgba(9,24,42,1)); border: 1px solid rgba(124, 170, 216, 0.18); border-radius: 12px; box-shadow: 0 12px 26px rgba(1, 4, 8, 0.18); padding: .9rem 1rem; }
+        .ticket-summary-card .eyebrow { color: rgba(237,244,255,0.7); font-size: .68rem; font-weight: 700; letter-spacing: .12rem; text-transform: uppercase; }
+        .ticket-summary-value { color: #edf4ff; font-size: 2rem; font-weight: 800; line-height: 1.1; margin-top: .35rem; }
+        .ticket-mini-box { background: rgba(124, 170, 216, 0.05); border: 1px solid rgba(124, 170, 216, 0.2); border-radius: 10px; display: flex; align-items: center; justify-content: space-between; gap: .7rem; margin-top: .25rem; padding: .75rem .8rem; }
+        .ticket-mini-label { color: rgba(237,244,255,0.72); font-size: .7rem; font-weight: 700; letter-spacing: .08rem; text-transform: uppercase; }
+        .ticket-mini-value { color: #edf4ff; font-size: 1.08rem; font-weight: 800; }
+        .stApp h1, .stApp h2, .stApp h3 { color: #edf4ff !important; }
+
+        @media (max-width: 700px) {
+            .ticket-card-bottom { align-items: flex-start; flex-direction: column; gap: .45rem; }
+            .ticket-toolbar { align-items: flex-start; flex-direction: column; gap: .25rem; }
+        }
 
         .brand-lockup { display: flex; align-items: center; gap: 12px; margin: 0 0 2rem; }
         .brand-monogram { width: 52px; height: 52px; border: 2px solid var(--gold); border-radius: 50%; display: grid; place-items: center; color: #fff; font-family: 'Cormorant Garamond', serif; font-size: 2rem; font-weight: 600; line-height: 1; box-shadow: inset 0 0 0 4px #171f38, inset 0 0 0 6px rgba(255,255,255,.9); }
@@ -367,20 +417,319 @@ def exibir_dashboard() -> None:
 
 def exibir_tickets() -> None:
     st.title("Tickets")
-    st.caption("Solicitacoes e acompanhamentos internos | dados demonstrativos")
-    tickets = pd.DataFrame(
-        [
-            {"Ticket": "#1048", "Assunto": "Conferencia de calculo", "Responsavel": "Contadoria", "Prioridade": "Alta", "Status": "Em analise", "Atualizado": "Hoje, 10:30"},
-            {"Ticket": "#1042", "Assunto": "Documentacao pendente", "Responsavel": "Juridico", "Prioridade": "Media", "Status": "Aguardando cliente", "Atualizado": "Ontem, 16:20"},
-            {"Ticket": "#1039", "Assunto": "Validacao de repasse", "Responsavel": "Financeiro", "Prioridade": "Alta", "Status": "Em andamento", "Atualizado": "Ontem, 11:15"},
-            {"Ticket": "#1031", "Assunto": "Atualizacao cadastral", "Responsavel": "Administrativo", "Prioridade": "Baixa", "Status": "Concluido", "Atualizado": "18 Set"},
-        ]
-    )
-    aberto, andamento, concluido = st.columns(3)
-    aberto.metric("Abertos", "12", "+3 hoje")
-    andamento.metric("Em andamento", "8", "2 prioritarios")
-    concluido.metric("Concluidos", "24", "+6 na semana")
-    st.dataframe(tickets, use_container_width=True, hide_index=True)
+    st.caption("Analise de honorarios por tese juridica — Processos Arquivados · Advbox CRM")
+
+    api_key = _get_env_or_secret("ADVBOX_API_KEY") or _get_env_or_secret("ADVBOX_TOKEN")
+    base_url = _get_env_or_secret("ADVBOX_API_URL", "https://app.advbox.com.br/api/v1")
+
+    if st.button("Atualizar dados do Advbox", key="atualizar_tickets"):
+        carregar_processos_advbox.clear()
+
+    if not api_key:
+        st.info("ℹ️ AMOSTRA: Estes dados são sintéticos. Configure ADVBOX_API_KEY para consultar o Advbox.")
+        processos = gerar_dados_amostra()
+    else:
+        try:
+            with st.spinner("Consultando processos do Advbox..."):
+                processos = carregar_processos_advbox(api_key, base_url)
+        except IntegrationError as error:
+            st.error(str(error))
+            return
+
+    dataframe = pd.DataFrame(processos)
+    if dataframe.empty:
+        st.warning("A API do Advbox nao retornou processos.")
+        return
+
+    kpis = calcular_kpis(dataframe)
+
+    st.markdown("<div style='margin: 1.5rem 0;'></div>", unsafe_allow_html=True)
+
+    kpis_data = [
+        ("Processos", f"{kpis['processos']:,}".replace(",", "."), "Com número CNJ"),
+        ("Pendentes", f"{kpis['pendentes']:,}".replace(",", "."), "Sem data de encerramento"),
+        ("Ticket Médio", _formatar_reais(kpis["ticket_medio"]), "Média dos honorários"),
+        ("Base Comercial", _formatar_reais(kpis["ticket_base"]), "Valor da causa indisponível na API"),
+        ("Expectativa", _formatar_reais(kpis["expectativa"]), "Honorários em aberto"),
+        ("Prejuízo Pot.", _formatar_reais(kpis["prejuizo"]), "Honorários perdidos"),
+    ]
+
+    for row in range(2):
+        kpi_cols = st.columns(3)
+        for col in range(3):
+            idx = row * 3 + col
+            if idx < len(kpis_data):
+                label, value, sublabel = kpis_data[idx]
+                with kpi_cols[col]:
+                    st.markdown(
+                        f"""
+                        <div style='background: rgba(14, 31, 50, 0.9); border: 1px solid rgba(124, 170, 216, 0.22);
+                        border-radius: 12px; padding: 1.1rem 1.2rem;'>
+                            <div style='color: rgba(237,244,255,0.7); font-size: 0.7rem; font-weight: 700;
+                            letter-spacing: 0.12rem; text-transform: uppercase; margin-bottom: 0.5rem;'>
+                                {label}
+                            </div>
+                            <div style='color: #edf4ff; font-size: 1.3rem; font-weight: 800; line-height: 1.1;
+                            margin-bottom: 0.25rem;'>
+                                {value}
+                            </div>
+                            <div style='color: rgba(237,244,255,0.6); font-size: 0.7rem;'>
+                                {sublabel}
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def carregar_processos_advbox(api_key: str, base_url: str) -> list[dict]:
+    return AdvboxClient(api_key=api_key, base_url=base_url).list_lawsuits()
+
+
+def _formatar_reais(valor: float | int | None) -> str:
+    if valor is None or pd.isna(valor):
+        return "Indisponivel"
+    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def ler_dados_excel() -> dict:
+    """Lê dados do arquivo TICKET.xlsx."""
+    import openpyxl
+    caminho_arquivo = PROJECT_ROOT / "data" / "TICKET.xlsx"
+
+    if not caminho_arquivo.exists():
+        return {"processos_em_andamento": 0, "total_processos": 0, "atualizado_em": "Não atualizado"}
+
+    try:
+        wb = openpyxl.load_workbook(caminho_arquivo)
+        ws_dados = wb["Dados"]
+        ws_controle = wb["Controle"]
+
+        return {
+            "processos_em_andamento": ws_dados["B2"].value or 0,
+            "total_processos": ws_controle["B3"].value or 0,
+            "atualizado_em": ws_controle["B2"].value or "Não atualizado"
+        }
+    except Exception:
+        return {"processos_em_andamento": 0, "total_processos": 0, "atualizado_em": "Erro ao ler"}
+
+
+def exibir_ticket_medio() -> None:
+    st.title("Ticket Medio")
+
+    header_col1, header_col2, header_col3 = st.columns([3, 2, 1])
+    with header_col1:
+        st.caption("Analise de honorarios por tese juridica — Processos Arquivados · Advbox CRM")
+    with header_col3:
+        if st.button("Atualizar dados do Advbox", key="atualizar_ticket_medio"):
+            carregar_processos_advbox.clear()
+
+    api_key = _get_env_or_secret("ADVBOX_API_KEY") or _get_env_or_secret("ADVBOX_TOKEN")
+    base_url = _get_env_or_secret("ADVBOX_API_URL", "https://app.advbox.com.br/api/v1")
+
+    if not api_key:
+        st.info("ℹ️ AMOSTRA: Estes dados são sintéticos. Configure ADVBOX_API_KEY para consultar o Advbox.")
+        processos = gerar_dados_amostra()
+    else:
+        try:
+            with st.spinner("Consultando processos do Advbox..."):
+                processos = carregar_processos_advbox(api_key, base_url)
+        except IntegrationError as error:
+            st.error(str(error))
+            return
+
+    dataframe = pd.DataFrame(processos)
+    if dataframe.empty:
+        st.warning("A API do Advbox nao retornou processos.")
+        return
+
+    kpis = calcular_kpis(dataframe)
+
+    col_eficiencia, col_spacer = st.columns([1, 4])
+    with col_eficiencia:
+        if kpis["eficiencia"] is not None:
+            eficiencia_pct = f"{kpis['eficiencia']:.0%}"
+            st.markdown(
+                f"""
+                <div style='text-align: center; padding: 1.5rem 1rem;'>
+                    <div style='background: #2ecb72; border-radius: 50%; width: 120px; height: 120px;
+                    display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 0 auto;'>
+                        <div style='font-size: 2.5rem; font-weight: 800; color: white;'>{eficiencia_pct}</div>
+                    </div>
+                    <div style='margin-top: 0.8rem; font-size: 0.7rem; font-weight: 700;
+                    letter-spacing: 0.12rem; text-transform: uppercase; color: rgba(237,244,255,0.72);'>
+                        Eficiencia
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    st.markdown("<div style='margin: 1.5rem 0;'></div>", unsafe_allow_html=True)
+
+    kpis_data = [
+        ("Processos", f"{kpis['processos']:,}".replace(",", "."), "Total arquivados"),
+        ("Pendentes", f"{kpis['pendentes']:,}".replace(",", "."), "Em andamento"),
+        ("Ticket Médio", _formatar_reais(kpis["ticket_medio"]), "Média dos honorários"),
+        ("Base Comercial", _formatar_reais(kpis["ticket_base"]), "Média valor da causa"),
+        ("Expectativa", _formatar_reais(kpis["expectativa"]), "Honorários em aberto"),
+        ("Prejuízo Pot.", _formatar_reais(kpis["prejuizo"]), "Honorários perdidos"),
+    ]
+
+    for row in range(2):
+        kpi_cols = st.columns(3)
+        for col in range(3):
+            idx = row * 3 + col
+            if idx < len(kpis_data):
+                label, value, sublabel = kpis_data[idx]
+                with kpi_cols[col]:
+                    st.markdown(
+                        f"""
+                        <div style='background: rgba(14, 31, 50, 0.9); border: 1px solid rgba(124, 170, 216, 0.22);
+                        border-radius: 12px; padding: 1.1rem 1.2rem;'>
+                            <div style='color: rgba(237,244,255,0.7); font-size: 0.7rem; font-weight: 700;
+                            letter-spacing: 0.12rem; text-transform: uppercase; margin-bottom: 0.5rem;'>
+                                {label}
+                            </div>
+                            <div style='color: #edf4ff; font-size: 1.3rem; font-weight: 800; line-height: 1.1;
+                            margin-bottom: 0.25rem;'>
+                                {value}
+                            </div>
+                            <div style='color: rgba(237,244,255,0.6); font-size: 0.7rem;'>
+                                {sublabel}
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+    st.markdown("<div style='margin: 2rem 0; border-top: 1px solid rgba(124, 170, 216, 0.22);'></div>", unsafe_allow_html=True)
+
+    tese_coluna, resultado_coluna = st.columns([3, 2])
+
+    with tese_coluna:
+        st.markdown("<div style='display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;'>"
+                   "<span style='font-size: 1.2rem;'>📋</span>"
+                   "<span style='font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08rem; "
+                   "text-transform: uppercase; color: rgba(237,244,255,0.7);'>Ticket por tese juridica</span>"
+                   "</div>", unsafe_allow_html=True)
+        tabela = tabela_por_tese(dataframe)
+        if not tabela.empty:
+            tabela_display = tabela.copy()
+            tabela_display.index = range(10, 10 + len(tabela_display))
+            tabela_display["Ticket Médio"] = tabela_display["Ticket Médio"].map(_formatar_reais)
+            tabela_display["Taxa de Êxito"] = tabela_display["Taxa de Êxito"].map(
+                lambda valor: f"{valor:.0%}" if isinstance(valor, (float, int)) else "—"
+            )
+            st.dataframe(
+                tabela_display,
+                use_container_width=True,
+                hide_index=False,
+                column_config={
+                    "Tese": st.column_config.TextColumn(width="medium"),
+                    "Ticket Médio": st.column_config.TextColumn(width="small"),
+                    "Taxa de Êxito": st.column_config.TextColumn(width="small"),
+                }
+            )
+        else:
+            st.info("A resposta da API nao contem dados de tese e honorarios para montar a tabela.")
+
+    with resultado_coluna:
+        st.markdown("<div style='display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;'>"
+                   "<span style='font-size: 1.2rem;'>🎯</span>"
+                   "<span style='font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08rem; "
+                   "text-transform: uppercase; color: rgba(237,244,255,0.7);'>Resultado dos processos</span>"
+                   "</div>", unsafe_allow_html=True)
+        resultados = distribuicao_resultado(dataframe)
+        if not resultados.empty:
+            cores = alt.Scale(
+                domain=["GANHO", "PERDIDO", "EM ANDAMENTO"],
+                range=["#2ecb72", "#e94f3d", "#3598db"],
+            )
+            grafico_resultado = (
+                alt.Chart(resultados)
+                .mark_arc(innerRadius=72)
+                .encode(
+                    theta=alt.Theta("Quantidade:Q"),
+                    color=alt.Color("Status:N", scale=cores, legend=alt.Legend(title=None, orient="bottom")),
+                    tooltip=["Status:N", "Quantidade:Q"],
+                )
+                .properties(height=300)
+            )
+            st.altair_chart(grafico_resultado, use_container_width=True)
+        else:
+            st.info("A API nao fornece status de resultado para este grafico.")
+
+    st.markdown("<div style='margin: 2rem 0; border-top: 1px solid rgba(124, 170, 216, 0.22);'></div>", unsafe_allow_html=True)
+
+    faixas = distribuicao_por_faixa(dataframe)
+    if not faixas.empty:
+        st.markdown("<div style='display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;'>"
+                   "<span style='font-size: 1.2rem;'>💼</span>"
+                   "<span style='font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08rem; "
+                   "text-transform: uppercase; color: rgba(237,244,255,0.7);'>Distribuicao por faixa de ticket</span>"
+                   "</div>", unsafe_allow_html=True)
+        grafico_faixa = (
+            alt.Chart(faixas)
+            .mark_bar(color="#3598db")
+            .encode(
+                x=alt.X("Faixa:N", axis=alt.Axis(labelFontSize=10)),
+                y=alt.Y("Quantidade:Q", axis=alt.Axis(labelFontSize=10)),
+                tooltip=["Faixa:N", "Quantidade:Q"],
+            )
+            .properties(height=250)
+        )
+        st.altair_chart(grafico_faixa, use_container_width=True)
+
+    st.markdown("<div style='margin: 1.5rem 0;'></div>", unsafe_allow_html=True)
+
+    valor_fase_coluna, quantidade_fase_coluna = st.columns(2)
+
+    with valor_fase_coluna:
+        st.markdown("<div style='display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;'>"
+                   "<span style='font-size: 1.2rem;'>💰</span>"
+                   "<span style='font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08rem; "
+                   "text-transform: uppercase; color: rgba(237,244,255,0.7);'>Expectativa por fase</span>"
+                   "</div>", unsafe_allow_html=True)
+        valores_fase = valores_por_fase(dataframe, kpis["ticket_medio"])
+        if not valores_fase.empty:
+            valores_fase_display = valores_fase.set_index("Fase")
+            grafico_valor = (
+                alt.Chart(valores_fase.reset_index())
+                .mark_bar(color="#2ecb72")
+                .encode(
+                    y=alt.Y("Fase:N", sort="-x", axis=alt.Axis(labelFontSize=11)),
+                    x=alt.X("Expectativa (R$):Q", axis=alt.Axis(labelFontSize=10)),
+                    tooltip=["Fase:N", alt.Tooltip("Expectativa (R$):Q", format="R$ ,.0f")],
+                )
+                .properties(height=250)
+            )
+            st.altair_chart(grafico_valor, use_container_width=True)
+        else:
+            st.info("Dados insuficientes para exibir expectativa por fase.")
+
+    with quantidade_fase_coluna:
+        st.markdown("<div style='display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;'>"
+                   "<span style='font-size: 1.2rem;'>📊</span>"
+                   "<span style='font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08rem; "
+                   "text-transform: uppercase; color: rgba(237,244,255,0.7);'>Processos por fase</span>"
+                   "</div>", unsafe_allow_html=True)
+        fases = processos_por_fase(dataframe)
+        if not fases.empty:
+            grafico_fase = (
+                alt.Chart(fases)
+                .mark_bar(color="#00bde8")
+                .encode(
+                    y=alt.Y("Fase:N", sort="-x", axis=alt.Axis(labelFontSize=11)),
+                    x=alt.X("Quantidade:Q", axis=alt.Axis(labelFontSize=10)),
+                    tooltip=["Fase:N", "Quantidade:Q"],
+                )
+                .properties(height=250)
+            )
+            st.altair_chart(grafico_fase, use_container_width=True)
+        else:
+            st.info("Nenhum processo com numero CNJ valido foi encontrado.")
 
 
 def exibir_contadoria() -> None:
@@ -413,6 +762,51 @@ def exibir_contadoria() -> None:
         dataframe = pd.DataFrame(pagamentos)
         colunas = [coluna for coluna in ["id", "value", "status", "dueDate", "paymentDate"] if coluna in dataframe.columns]
         st.dataframe(dataframe[colunas], use_container_width=True, hide_index=True)
+
+
+def exibir_processos() -> None:
+    """MVP: Exibe número de processos em andamento lido da planilha."""
+    st.title("Processos em Andamento")
+    st.caption("Dados sincronizados do Advbox via planilha — Teste de Integração")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("🔄 Atualizar dados do Advbox", key="atualizar_excel"):
+            api_key = _get_env_or_secret("ADVBOX_API_KEY") or _get_env_or_secret("ADVBOX_TOKEN")
+            if not api_key:
+                st.error("ADVBOX_API_KEY não configurada nos secrets/env")
+            else:
+                try:
+                    with st.spinner("Exportando dados do Advbox para planilha..."):
+                        resultado = exportar_agora(api_key)
+                    st.success(f"✅ Atualizado com sucesso!")
+                    st.json(resultado)
+                except Exception as e:
+                    st.error(f"❌ Erro: {str(e)}")
+
+    with col2:
+        st.write("")
+
+    st.markdown("<div style='margin: 2rem 0; border-top: 1px solid rgba(124, 170, 216, 0.22);'></div>", unsafe_allow_html=True)
+
+    dados = ler_dados_excel()
+
+    col_m, col_t, col_a = st.columns(3)
+    with col_m:
+        st.metric("Processos em Andamento", dados["processos_em_andamento"], "Lido da planilha")
+    with col_t:
+        st.metric("Total de Processos", dados["total_processos"], "Histórico")
+    with col_a:
+        st.metric("Última Atualização", dados["atualizado_em"], "Status")
+
+    st.markdown("<div style='margin: 1.5rem 0;'></div>", unsafe_allow_html=True)
+
+    st.info("ℹ️ Este é o teste MVP (Mínimo Viável) da integração:\n\n"
+            "1. Clique em 'Atualizar dados do Advbox'\n"
+            "2. Os dados serão salvos em `hub-escritorio/data/TICKET.xlsx`\n"
+            "3. Os valores acima são lidos dessa planilha\n\n"
+            "Se isso funcionar, escalamos para mais dados e fórmulas!")
 
 
 def exibir_configuracoes() -> None:
@@ -456,12 +850,12 @@ if verificar_seguranca():
     st.sidebar.caption("GOVERNANCA DO ESCRITORIO")
     st.sidebar.success(f"Conectado como:\n**{st.session_state['usuario']}**")
     st.sidebar.caption("NAVEGACAO PRINCIPAL")
-    opcoes_menu = ["Dashboard", "Tickets", "Contadoria", "Configuracoes"]
-    if "menu_atual" not in st.session_state:
-        st.session_state["menu_atual"] = "Dashboard"
+    opcoes_menu = ["Dashboard", "Tickets", "Ticket Médio", "Contadoria", "Configuracoes"]
+    if st.session_state.get("menu_atual") not in opcoes_menu:
+        st.session_state["menu_atual"] = "Tickets"
 
     for opcao in opcoes_menu:
-        icone = {"Dashboard": "▦", "Tickets": "◫", "Contadoria": "▤", "Configuracoes": "⚙"}[opcao]
+        icone = {"Dashboard": "▦", "Tickets": "◫", "Ticket Médio": "◊", "Contadoria": "▤", "Configuracoes": "⚙"}[opcao]
         rotulo = f"{icone}  {opcao}"
         if st.sidebar.button(rotulo, key=f"menu_{opcao}", type="primary" if st.session_state["menu_atual"] == opcao else "secondary"):
             st.session_state["menu_atual"] = opcao
@@ -470,10 +864,14 @@ if verificar_seguranca():
     menu = st.session_state["menu_atual"]
     cabecalho_painel()
 
-    if menu == "Dashboard":
+    if menu == "Processos":
+        exibir_processos()
+    elif menu == "Dashboard":
         exibir_dashboard()
     elif menu == "Tickets":
         exibir_tickets()
+    elif menu == "Ticket Médio":
+        exibir_ticket_medio()
     elif menu == "Contadoria":
         exibir_contadoria()
     else:

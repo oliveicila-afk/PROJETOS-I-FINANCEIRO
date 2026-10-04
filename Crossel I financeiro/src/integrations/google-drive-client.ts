@@ -41,7 +41,7 @@ export class GoogleDriveClient {
 
     const payload = {
       iss: this.config.serviceAccountEmail,
-      scope: 'https://www.googleapis.com/auth/drive.readonly',
+      scope: 'https://www.googleapis.com/auth/drive',
       aud: 'https://oauth2.googleapis.com/token',
       exp: Math.floor(Date.now() / 1000) + 3600,
       iat: Math.floor(Date.now() / 1000)
@@ -174,6 +174,47 @@ export class GoogleDriveClient {
     }
 
     return Buffer.from(await response.arrayBuffer());
+  }
+
+  async uploadFile(
+    parentFolderId: string,
+    fileName: string,
+    content: Buffer,
+    mimeType = 'application/octet-stream'
+  ): Promise<DriveFile> {
+    const token = await this.getAccessToken();
+    const boundary = `drive-upload-${Date.now()}`;
+    const metadata = JSON.stringify({
+      name: fileName,
+      parents: [parentFolderId],
+      mimeType
+    });
+    const body = Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`),
+      Buffer.from(`--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`),
+      content,
+      Buffer.from(`\r\n--${boundary}--\r\n`)
+    ]);
+
+    const params = new URLSearchParams({
+      uploadType: 'multipart',
+      fields: 'id,name,mimeType,webViewLink,webContentLink,createdTime,modifiedTime'
+    });
+    const response = await fetch(`https://www.googleapis.com/upload/drive/v3/files?${params}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+        'Content-Length': String(body.byteLength)
+      },
+      body
+    });
+
+    if (!response.ok) {
+      throw new Error(`Google Drive upload error: ${response.status} ${response.statusText}`);
+    }
+
+    return response.json() as Promise<DriveFile>;
   }
 
   async getFileDownloadUrl(fileId: string): Promise<string> {

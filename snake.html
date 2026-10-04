@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f1e8">
+  <title>Serpente Solar | Fase 01</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+    :root {
+      color-scheme: light;
+      --paper: #f4f1e8;
+      --ink: #202820;
+      --muted: #69746b;
+      --green: #c9f36a;
+      --green-dark: #183a2b;
+      --coral: #fa7055;
+      --blue: #83d7d0;
+      --line: #d8d9cc;
+      --mono: 'DM Mono', 'Courier New', monospace;
+      --sans: 'Space Grotesk', 'Trebuchet MS', sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-width: 320px;
+      min-height: 100vh;
+      margin: 0;
+      color: var(--ink);
+      background-color: var(--paper);
+      background-image: radial-gradient(#a9b09c 0.65px, transparent 0.65px);
+      background-size: 17px 17px;
+      font-family: var(--sans);
+    }
+
+    button { font: inherit; }
+
+    .page {
+      width: min(100% - 40px, 1050px);
+      margin: 0 auto;
+      padding: 28px 0 36px;
+    }
+
+    .topline, .eyebrow, .stat-label, .stage-label, .key-hint, .footer-note {
+      font-family: var(--mono);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .topline {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .brand-mark { color: var(--ink); font-weight: 500; }
+    .brand-mark span { color: #618238; }
+
+    .intro {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 34px 0 22px;
+    }
+
+    .eyebrow { margin: 0 0 8px; color: #618238; font-size: 10px; }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(38px, 7vw, 66px);
+      line-height: 0.96;
+      font-weight: 600;
+    }
+
+    h1 span { color: #71963d; }
+
+    .stage-label {
+      flex: none;
+      padding: 10px 12px;
+      border: 1px solid var(--ink);
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .game-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 220px;
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .board-shell {
+      position: relative;
+      overflow: hidden;
+      border: 2px solid var(--ink);
+      background: var(--green-dark);
+      box-shadow: 7px 7px 0 var(--ink);
+      aspect-ratio: 25 / 19;
+    }
+
+    canvas { display: block; width: 100%; height: 100%; }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgb(17 38 28 / 76%);
+      color: #fffef4;
+      text-align: center;
+      transition: opacity 180ms ease;
+    }
+
+    .overlay[hidden] { display: none; }
+
+    .overlay-content { max-width: 330px; animation: arrive 260ms ease both; }
+    .overlay-kicker { margin: 0 0 9px; color: var(--green); font: 11px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; }
+    .overlay h2 { margin: 0; font-size: clamp(28px, 5vw, 44px); line-height: 1; }
+    .overlay p:not(.overlay-kicker) { margin: 12px 0 19px; color: #d4dfd3; font-size: 14px; line-height: 1.5; }
+
+    .primary-button {
+      min-height: 46px;
+      padding: 0 20px;
+      border: 2px solid var(--green);
+      background: var(--green);
+      color: var(--ink);
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 120ms ease, background 120ms ease;
+    }
+
+    .primary-button:hover { transform: translateY(-2px); background: #d8ff87; }
+    .primary-button:focus-visible, .icon-button:focus-visible, .pad button:focus-visible { outline: 3px solid var(--coral); outline-offset: 3px; }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      border-top: 2px solid var(--ink);
+    }
+
+    .stat {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding: 15px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .stat-label { color: var(--muted); font-size: 10px; }
+    .stat-value { font: 500 25px var(--mono); font-variant-numeric: tabular-nums; }
+
+    .goal { padding: 20px 0 18px; border-bottom: 1px solid var(--line); }
+    .goal-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+    .goal-title { font-size: 13px; font-weight: 600; }
+    .goal-count { color: var(--muted); font: 12px var(--mono); }
+
+    .progress-track { height: 8px; overflow: hidden; background: #dfe3d4; }
+    .progress-bar { width: 0; height: 100%; background: #779c42; transition: width 180ms ease; }
+
+    .controls { padding-top: 20px; }
+    .controls h2 { margin: 0 0 12px; font-size: 13px; font-weight: 600; }
+    .key-hint { display: block; margin-top: 8px; color: var(--muted); font-size: 9px; line-height: 1.7; }
+
+    .action-row { display: flex; gap: 8px; margin-top: auto; padding-top: 18px; }
+    .icon-button {
+      flex: 1;
+      min-height: 40px;
+      border: 1px solid var(--ink);
+      background: transparent;
+      color: var(--ink);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .icon-button:hover { background: var(--ink); color: var(--paper); }
+
+    .touch-controls { display: none; }
+
+    .footer-note {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-top: 24px;
+      color: var(--muted);
+      font-size: 9px;
+    }
+
+    @keyframes arrive { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+    @media (max-width: 700px) {
+      .page { width: min(100% - 28px, 540px); padding-top: 17px; }
+      .topline { font-size: 9px; }
+      .intro { padding: 27px 0 17px; }
+      .game-layout { grid-template-columns: 1fr; gap: 17px; }
+      .board-shell { box-shadow: 4px 4px 0 var(--ink); }
+      .sidebar { display: grid; grid-template-columns: 1fr 1fr; column-gap: 18px; }
+      .goal { grid-column: 1 / -1; }
+      .controls { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 14px; }
+      .controls h2 { margin: 0; }
+      .key-hint { margin: 0; text-align: right; }
+      .action-row { grid-column: 1 / -1; margin-top: 0; padding-top: 12px; }
+      .touch-controls { display: grid; grid-template-columns: repeat(3, 48px); grid-template-rows: repeat(2, 42px); justify-content: center; gap: 5px; margin: 20px auto 0; }
+      .pad button { border: 1px solid var(--ink); background: var(--paper); color: var(--ink); font-size: 19px; cursor: pointer; touch-action: manipulation; }
+      .pad button:active { background: var(--green); }
+      .pad-up { grid-column: 2; grid-row: 1; }
+      .pad-left { grid-column: 1; grid-row: 2; }
+      .pad-down { grid-column: 2; grid-row: 2; }
+      .pad-right { grid-column: 3; grid-row: 2; }
+      .footer-note { margin-top: 18px; font-size: 8px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="topline">
+      <div class="brand-mark">JOGOS DE QUINTAL <span>/ 001</span></div>
+      <div>EDIÇÃO ARCADE · 2026</div>
+    </header>
+
+    <section class="intro" aria-label="Fase atual">
+      <div>
+        <p class="eyebrow">Um clássico, uma missão</p>
+        <h1>Serpente <span>Solar</span></h1>
+      </div>
+      <div class="stage-label">FASE 01 / 01</div>
+    </section>
+
+    <section class="game-layout" aria-label="Jogo da cobrinha">
+      <div>
+        <div class="board-shell">
+          <canvas id="game" width="600" height="456" aria-label="Tabuleiro do jogo"></canvas>
+          <div class="overlay" id="overlay">
+            <div class="overlay-content">
+              <p class="overlay-kicker" id="overlay-kicker">Fase única · 10 frutas</p>
+              <h2 id="overlay-title">Pronta para crescer?</h2>
+              <p id="overlay-message">Pegue as frutas, desvie do próprio rastro e complete a missão.</p>
+              <button class="primary-button" id="start-button" type="button">Começar partida</button>
+            </div>
+          </div>
+        </div>
+        <div class="touch-controls pad" aria-label="Controles direcionais">
+          <button class="pad-up" type="button" data-direction="up" aria-label="Cima">↑</button>
+          <button class="pad-left" type="button" data-direction="left" aria-label="Esquerda">←</button>
+          <button class="pad-down" type="button" data-direction="down" aria-label="Baixo">↓</button>
+          <button class="pad-right" type="button" data-direction="right" aria-label="Direita">→</button>
+        </div>
+      </div>
+
+      <aside class="sidebar" aria-label="Placar e controles">
+        <div class="stat"><span class="stat-label">Pontos</span><strong class="stat-value" id="score">00</strong></div>
+        <div class="stat"><span class="stat-label">Recorde</span><strong class="stat-value" id="best">00</strong></div>
+        <div class="goal">
+          <div class="goal-row"><span class="goal-title">Missão da fase</span><span class="goal-count" id="goal-count">0 / 10</span></div>
+          <div class="progress-track" role="progressbar" aria-label="Frutas coletadas" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0"><div class="progress-bar" id="progress"></div></div>
+        </div>
+        <div class="controls">
+          <h2>Como jogar</h2>
+          <span class="key-hint">SETAS / WASD · MOVER<br>ESPAÇO · PAUSAR</span>
+        </div>
+        <div class="action-row">
+          <button class="icon-button" id="pause-button" type="button">Pausar</button>
+          <button class="icon-button" id="restart-button" type="button">Reiniciar</button>
+        </div>
+      </aside>
+    </section>
+
+    <footer class="footer-note"><span>10 frutas para fechar a fase</span><span>SEM PRESSA. OLHO NO RABO.</span></footer>
+  </main>
+
+  <script>
+    'use strict';
+
+    const canvas = document.querySelector('#game');
+    const context = canvas.getContext('2d');
+    const columns = 25;
+    const rows = 19;
+    const cell = 24;
+    const target = 10;
+    const scoreElement = document.querySelector('#score');
+    const bestElement = document.querySelector('#best');
+    const goalCount = document.querySelector('#goal-count');
+    const progress = document.querySelector('#progress');
+    const progressTrack = document.querySelector('.progress-track');
+    const overlay = document.querySelector('#overlay');
+    const overlayKicker = document.querySelector('#overlay-kicker');
+    const overlayTitle = document.querySelector('#overlay-title');
+    const overlayMessage = document.querySelector('#overlay-message');
+    const startButton = document.querySelector('#start-button');
+    const pauseButton = document.querySelector('#pause-button');
+    const restartButton = document.querySelector('#restart-button');
+
+    const directions = {
+      up: { x: 0, y: -1 },
+      down: { x: 0, y: 1 },
+      left: { x: -1, y: 0 },
+      right: { x: 1, y: 0 }
+    };
+
+    let snake;
+    let direction;
+    let nextDirection;
+    let fruit;
+    let score;
+    let state = 'ready';
+    let lastStep = 0;
+    let best = Number(localStorage.getItem('serpente-solar-recorde') || 0);
+
+    bestElement.textContent = String(best).padStart(2, '0');
+
+    function drawBoard() {
+      context.fillStyle = '#183a2b';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.strokeStyle = 'rgba(232, 246, 208, 0.075)';
+      context.lineWidth = 1;
+      for (let x = 0; x <= columns; x += 1) {
+        context.beginPath();
+        context.moveTo(x * cell + 0.5, 0);
+        context.lineTo(x * cell + 0.5, canvas.height);
+        context.stroke();
+      }
+      for (let y = 0; y <= rows; y += 1) {
+        context.beginPath();
+        context.moveTo(0, y * cell + 0.5);
+        context.lineTo(canvas.width, y * cell + 0.5);
+        context.stroke();
+      }
+    }
+
+    function draw() {
+      drawBoard();
+      if (fruit) {
+        const centerX = fruit.x * cell + cell / 2;
+        const centerY = fruit.y * cell + cell / 2;
+        context.fillStyle = '#fa7055';
+        context.beginPath();
+        context.arc(centerX, centerY + 1, 8, 0, Math.PI * 2);
+        context.fill();
+        context.fillStyle = '#f4f1e8';
+        context.beginPath();
+        context.arc(centerX - 2, centerY - 2, 2, 0, Math.PI * 2);
+        context.fill();
+        context.strokeStyle = '#c9f36a';
+        context.lineWidth = 2;
+        context.beginPath();
+        context.moveTo(centerX + 1, centerY - 6);
+        context.lineTo(centerX + 4, centerY - 10);
+        context.stroke();
+      }
+
+      snake.forEach((segment, index) => {
+        const inset = index === 0 ? 2 : 3;
+        const radius = index === 0 ? 8 : 6;
+        context.fillStyle = index === 0 ? '#e2ff9b' : `hsl(${82 - Math.min(index, 9) * 2} 79% ${68 - Math.min(index, 9) * 2}%)`;
+        context.beginPath();
+        context.roundRect(segment.x * cell + inset, segment.y * cell + inset, cell - inset * 2, cell - inset * 2, radius);
+        context.fill();
+      });
+
+      if (snake.length) {
+        const head = snake[0];
+        const eyePositions = direction.x === 1 ? [[17, 8], [17, 16]]
+          : direction.x === -1 ? [[7, 8], [7, 16]]
+            : direction.y === -1 ? [[8, 7], [16, 7]] : [[8, 17], [16, 17]];
+        context.fillStyle = '#183a2b';
+        eyePositions.forEach(([offsetX, offsetY]) => {
+          context.beginPath();
+          context.arc(head.x * cell + offsetX, head.y * cell + offsetY, 1.7, 0, Math.PI * 2);
+          context.fill();
+        });
+      }
+    }
+
+    function placeFruit() {
+      const emptyCells = [];
+      for (let y = 0; y < rows; y += 1) {
+        for (let x = 0; x < columns; x += 1) {
+          if (!snake.some(segment => segment.x === x && segment.y === y)) emptyCells.push({ x, y });
+        }
+      }
+      fruit = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+    }
+
+    function updateScore() {
+      scoreElement.textContent = String(score).padStart(2, '0');
+      goalCount.textContent = `${score} / ${target}`;
+      progress.style.width = `${(score / target) * 100}%`;
+      progressTrack.setAttribute('aria-valuenow', String(score));
+      if (score > best) {
+        best = score;
+        bestElement.textContent = String(best).padStart(2, '0');
+        localStorage.setItem('serpente-solar-recorde', String(best));
+      }
+    }
+
+    function setOverlay(kicker, title, message, buttonLabel) {
+      overlayKicker.textContent = kicker;
+      overlayTitle.textContent = title;
+      overlayMessage.textContent = message;
+      startButton.textContent = buttonLabel;
+      overlay.hidden = false;
+    }
+
+    function resetGame() {
+      snake = [{ x: 12, y: 9 }, { x: 11, y: 9 }, { x: 10, y: 9 }];
+      direction = directions.right;
+      nextDirection = direction;
+      score = 0;
+      state = 'ready';
+      placeFruit();
+      updateScore();
+      pauseButton.textContent = 'Pausar';
+      setOverlay('Fase única · 10 frutas', 'Pronta para crescer?', 'Pegue as frutas, desvie do próprio rastro e complete a missão.', 'Começar partida');
+      draw();
+    }
+
+    function startGame() {
+      if (state === 'over' || state === 'won') resetGame();
+      state = 'playing';
+      lastStep = 0;
+      overlay.hidden = true;
+      pauseButton.textContent = 'Pausar';
+    }
+
+    function togglePause() {
+      if (state === 'playing') {
+        state = 'paused';
+        pauseButton.textContent = 'Retomar';
+        setOverlay('Partida pausada', 'Respire um segundo.', 'A cobrinha espera por você.', 'Continuar');
+      } else if (state === 'paused') {
+        startGame();
+      } else if (state === 'ready') {
+        startGame();
+      }
+    }
+
+    function finishGame(won) {
+      state = won ? 'won' : 'over';
+      pauseButton.textContent = 'Pausar';
+      if (won) {
+        setOverlay('Missão cumprida · fase 01', 'Que bela colheita!', 'Você pegou as 10 frutas e venceu a fase única.', 'Jogar novamente');
+      } else {
+        setOverlay('Fim de jogo', 'O rabo cruzou o caminho.', `Você fez ${score} ${score === 1 ? 'ponto' : 'pontos'}. Mais uma tentativa?`, 'Tentar de novo');
+      }
+    }
+
+    function step() {
+      direction = nextDirection;
+      const head = { x: snake[0].x + direction.x, y: snake[0].y + direction.y };
+      const eating = head.x === fruit.x && head.y === fruit.y;
+      const bodyToCheck = eating ? snake : snake.slice(0, -1);
+      const hitWall = head.x < 0 || head.x >= columns || head.y < 0 || head.y >= rows;
+      const hitBody = bodyToCheck.some(segment => segment.x === head.x && segment.y === head.y);
+
+      if (hitWall || hitBody) {
+        finishGame(false);
+        return;
+      }
+
+      snake.unshift(head);
+      if (eating) {
+        score += 1;
+        updateScore();
+        if (score >= target) {
+          fruit = null;
+          draw();
+          finishGame(true);
+          return;
+        }
+        placeFruit();
+      } else {
+        snake.pop();
+      }
+      draw();
+    }
+
+    function gameLoop(timestamp) {
+      if (state === 'playing') {
+        const speed = Math.max(82, 138 - score * 4);
+        if (timestamp - lastStep >= speed) {
+          step();
+          lastStep = timestamp;
+        }
+      }
+      requestAnimationFrame(gameLoop);
+    }
+
+    function changeDirection(name) {
+      const requested = directions[name];
+      if (!requested) return;
+      if (requested.x + direction.x === 0 && requested.y + direction.y === 0) return;
+      nextDirection = requested;
+      if (state === 'ready') startGame();
+    }
+
+    document.addEventListener('keydown', event => {
+      const key = event.key.toLowerCase();
+      const keyDirections = {
+        arrowup: 'up', w: 'up',
+        arrowdown: 'down', s: 'down',
+        arrowleft: 'left', a: 'left',
+        arrowright: 'right', d: 'right'
+      };
+      if (keyDirections[key]) {
+        event.preventDefault();
+        changeDirection(keyDirections[key]);
+      } else if (key === ' ' || key === 'p') {
+        event.preventDefault();
+        togglePause();
+      } else if (key === 'enter' && !overlay.hidden) {
+        startGame();
+      }
+    });
+
+    document.querySelectorAll('[data-direction]').forEach(button => {
+      button.addEventListener('pointerdown', event => {
+        event.preventDefault();
+        changeDirection(button.dataset.direction);
+      });
+    });
+
+    startButton.addEventListener('click', startGame);
+    pauseButton.addEventListener('click', togglePause);
+    restartButton.addEventListener('click', resetGame);
+
+    resetGame();
+    requestAnimationFrame(gameLoop);
+  </script>
+</body>
+</html>

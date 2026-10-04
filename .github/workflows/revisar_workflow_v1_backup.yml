@@ -1,0 +1,136 @@
+name: Revisar posts 'sem oportunidade' do Advbox - v2.0
+
+on:
+  schedule:
+    # Primeira execução: 8h horário de Cuiabá (UTC-4) = 12h UTC
+    - cron: '0 12 * * *'
+    # Segunda execução: 15h horário de Cuiabá (UTC-4) = 19h UTC
+    - cron: '0 19 * * *'
+  workflow_dispatch:  # Permite rodar manualmente
+
+jobs:
+  revisar-posts:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests PyPDF2 google-cloud-drive google-auth-httplib2 google-auth-oauthlib
+
+    - name: Decodificar credenciais Google
+      run: |
+        echo "${{ secrets.GOOGLE_CREDS_BASE64 }}" | base64 -d > credentials.json
+
+    - name: Determinar intervalo de tempo para análise
+      id: time_interval
+      run: |
+        # Determinar qual execução é (8h ou 15h)
+        HORA_UTC=$(date -u +%H)
+
+        if [ "$HORA_UTC" = "12" ]; then
+          # É a execução das 8h (UTC 12h)
+          # Revisar desde a última execução das 15h do dia anterior até agora
+          HORA_INICIO="15:00"
+          HORA_FIM="08:00"
+          echo "Execução: 8h (revisar desde 15h do dia anterior)"
+        else
+          # É a execução das 15h (UTC 19h)
+          # Revisar desde a execução das 8h até agora
+          HORA_INICIO="08:00"
+          HORA_FIM="15:00"
+          echo "Execução: 15h (revisar desde 8h)"
+        fi
+
+        echo "hora_inicio=$HORA_INICIO" >> $GITHUB_OUTPUT
+        echo "hora_fim=$HORA_FIM" >> $GITHUB_OUTPUT
+
+    - name: Executar revisor de posts
+      env:
+        ADVBOX_API_TOKEN: ${{ secrets.ADVBOX_TOKEN }}
+        ADVBOX_API_URL: 'https://api.advbox.com.br/api'
+        GOOGLE_CREDS_JSON: 'credentials.json'
+        HORA_INICIO: ${{ steps.time_interval.outputs.hora_inicio }}
+        HORA_FIM: ${{ steps.time_interval.outputs.hora_fim }}
+      run: |
+        python revisar_sem_oportunidade_v2.py > revisao_output.txt 2>&1
+
+    - name: Enviar relatório por email (SUCESSO)
+      if: success()
+      uses: dawidd6/action-send-mail@v3
+      with:
+        server_address: smtp.gmail.com
+        server_port: 465
+        username: ${{ secrets.SMTP_USER }}
+        password: ${{ secrets.SMTP_PASS }}
+        subject: '✅ Relatório Crossel - Triagem Automática de Posts AdvBox'
+        to: ${{ secrets.EMAIL_DESTINO }}
+        from: ${{ secrets.SMTP_USER }}
+        body: |
+          📋 RESUMO DA TRIAGEM AUTOMÁTICA DO ADVBOX
+
+          Data e Hora: $(date +'%d/%m/%Y às %H:%M:%S')
+          Status: ✅ SUCESSO
+
+          ═══════════════════════════════════════════════════════════
+
+          📊 ESTATÍSTICAS DO PERÍODO:
+
+          • Total de casos processados: [ver arquivo em anexo]
+          • Oportunidades encaminhadas ao comercial: [quantidade]
+          • Sem oportunidade: [quantidade]
+          • Ambíguos (revisão manual): [quantidade]
+
+          ═══════════════════════════════════════════════════════════
+
+          ⚠️ CASOS COM AMBIGUIDADE:
+
+          Se houver casos que requerem revisão manual:
+          [Nome do Cliente | Número do Processo]
+
+          ═══════════════════════════════════════════════════════════
+
+          📁 Detalhes completos em: https://github.com/${{ github.repository }}/blob/main/results/review_results.json
+
+          ✅ Próxima execução: Confira o histórico em GitHub Actions
+
+    - name: Enviar relatório por email (se houver erros)
+      if: failure()
+      uses: dawidd6/action-send-mail@v3
+      with:
+        server_address: smtp.gmail.com
+        server_port: 465
+        username: ${{ secrets.SMTP_USER }}
+        password: ${{ secrets.SMTP_PASS }}
+        subject: '❌ Erro ao revisar posts Advbox'
+        to: ${{ secrets.EMAIL_DESTINO }}
+        from: ${{ secrets.SMTP_USER }}
+        body: |
+          ❌ ERRO NA EXECUÇÃO
+
+          Data: $(date +'%d/%m/%Y às %H:%M:%S')
+
+          Erro durante a execução do revisor de posts 'sem oportunidade'.
+
+          Verifique o workflow em: https://github.com/${{ github.repository }}/actions
+
+          ═══════════════════════════════════════════════════════════
+
+          Para ver detalhes do erro, acesse:
+          Actions → Últimas execuções → Ver logs completos
+
+    - name: Commit dos resultados
+      if: always()
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add results/review_results.json || true
+        git commit -m "📋 Atualizar resultados da revisão ($(date +'%d/%m/%Y %H:%M'))" || true
+        git push || true
