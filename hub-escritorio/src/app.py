@@ -451,7 +451,7 @@ def exibir_tickets() -> None:
     kpis_data = [
         ("Processos", f"{dados_excel['processos_em_andamento']:,}".replace(",", "."), "Em andamento"),
         ("Pendentes", f"{dados_excel.get('processos_pendentes', 0):,}".replace(",", "."), "Não ingressados"),
-        ("Ticket Médio", _formatar_reais(kpis["ticket_medio"]), "Média dos honorários"),
+        ("Ticket Médio", _formatar_reais(dados_excel.get('ticket_medio', 0)), "Média dos honorários"),
         ("Base Comercial", _formatar_reais(kpis["ticket_base"]), "Valor da causa indisponível na API"),
         ("Expectativa", _formatar_reais(kpis["expectativa"]), "Honorários em aberto"),
         ("Prejuízo Pot.", _formatar_reais(kpis["prejuizo"]), "Honorários perdidos"),
