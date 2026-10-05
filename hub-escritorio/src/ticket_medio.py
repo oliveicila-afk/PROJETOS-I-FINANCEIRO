@@ -63,6 +63,34 @@ def calcular_kpis(frame: pd.DataFrame) -> dict[str, float | int | None]:
     }
 
 
+
+    def contar_processos_em_andamento(frame: pd.DataFrame) -> int:
+        process_numbers = frame.get("process_number", pd.Series("", index=frame.index))
+        valid_cnj = _matches_pattern(process_numbers, PROCESS_NUMBER_PATTERN)
+        stages = frame.get("stage", pd.Series("", index=frame.index))
+        archived = stages.fillna("").astype(str).str.contains("ARQUIV", case=False, regex=False)
+        return int((valid_cnj & ~archived).sum())
+
+
+    def contar_processos_pendentes(frame: pd.DataFrame) -> int:
+        process_numbers = frame.get("process_number", pd.Series("", index=frame.index))
+        empty_number = process_numbers.fillna("").astype(str).str.strip().str.lower().isin(["", "none"])
+        return int(empty_number.sum())
+
+def contar_processos_em_andamento(frame: pd.DataFrame) -> int:
+    process_numbers = frame.get("process_number", pd.Series("", index=frame.index))
+    valid_cnj = _matches_pattern(process_numbers, PROCESS_NUMBER_PATTERN)
+    stages = frame.get("stage", pd.Series("", index=frame.index))
+    archived = stages.fillna("").astype(str).str.contains("ARQUIV", case=False, regex=False)
+    return int((valid_cnj & ~archived).sum())
+
+
+def contar_processos_pendentes(frame: pd.DataFrame) -> int:
+    process_numbers = frame.get("process_number", pd.Series("", index=frame.index))
+    empty_number = process_numbers.fillna("").astype(str).str.strip().str.lower().isin(["", "none"])
+    return int(empty_number.sum())
+
+
 def tabela_por_tese(frame: pd.DataFrame) -> pd.DataFrame:
     if "type" not in frame.columns:
         return pd.DataFrame(columns=["Tese", "Ticket Médio", "Taxa de Êxito"])
@@ -98,6 +126,20 @@ def processos_por_fase(frame: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def distribuicao_por_campo(frame: pd.DataFrame, campo: str, rotulo: str) -> pd.DataFrame:
+    if campo not in frame.columns:
+        return pd.DataFrame(columns=[rotulo, "Quantidade"])
+
+    valores = frame[campo].fillna("").astype(str).str.strip().replace("", "Sem informação")
+    return (
+        valores.value_counts()
+        .rename_axis(rotulo)
+        .reset_index(name="Quantidade")
+        .sort_values("Quantidade", ascending=False)
+        .reset_index(drop=True)
+    )
+
+
 def valores_por_fase(frame: pd.DataFrame, ticket_medio: float) -> pd.DataFrame:
     result = processos_por_fase(frame)
     result["Expectativa (R$)"] = result["Quantidade"] * ticket_medio
@@ -116,7 +158,31 @@ def distribuicao_por_faixa(frame: pd.DataFrame) -> pd.DataFrame:
     return distribution.rename_axis("Faixa").reset_index(name="Quantidade")
 
 
-def distribuicao_resultado(frame: pd.DataFrame) -> pd.DataFrame:
-    status = _statuses(frame)
-    counts = status[status.isin([STATUS_WON, STATUS_LOST, STATUS_IN_PROGRESS])].value_counts()
-    return counts.rename_axis("Status").reset_index(name="Quantidade")
+def distribuicao_resultado(
+    frame: pd.DataFrame,
+    processos_em_andamento: int | None = None,
+) -> pd.DataFrame:
+    etapas = frame.get("stage", pd.Series("", index=frame.index))
+    etapas = etapas.fillna("").astype(str).str.strip().str.upper()
+    ganhos = int(etapas.str.contains("PROCESSO GANHO", regex=False).sum())
+    perdidos = int(etapas.str.contains("PROCESSO PERDIDO", regex=False).sum())
+
+    if processos_em_andamento is None:
+        process_numbers = frame.get("process_number", pd.Series("", index=frame.index))
+        steps = frame.get("step", pd.Series("", index=frame.index))
+        valid_process = _matches_pattern(process_numbers, PROCESS_NUMBER_PATTERN)
+        archived = (
+            steps.fillna("").astype(str).str.contains("ARQUIVAMENTO", case=False, regex=False)
+            | etapas.str.contains("ARQUIVAMENTO", regex=False)
+        )
+        em_andamento = int((valid_process & ~archived & ~etapas.str.contains("PROCESSO GANHO|PROCESSO PERDIDO", regex=True)).sum())
+    else:
+        em_andamento = max(0, int(processos_em_andamento))
+
+    return pd.DataFrame(
+        [
+            {"Status": STATUS_WON, "Quantidade": ganhos},
+            {"Status": STATUS_LOST, "Quantidade": perdidos},
+            {"Status": STATUS_IN_PROGRESS, "Quantidade": em_andamento},
+        ]
+    )

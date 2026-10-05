@@ -17,12 +17,22 @@ from ticket_medio import (
     distribuicao_por_faixa,
     distribuicao_resultado,
     calcular_kpis,
+    contar_processos_em_andamento,
+    contar_processos_pendentes,
+    distribuicao_por_campo,
     processos_por_fase,
-    tabela_por_tese,
     valores_por_fase,
 )
 from sample_data import gerar_dados_amostra
 from integracoes.excel_export import exportar_agora
+from integracoes.scheduler import iniciar_scheduler, obter_status_scheduler
+from integracoes.base_comercial import (
+    calcular_expectativa_receita,
+    calcular_prejuizo_potencial,
+    calcular_ticket_ajustado_geral,
+    calcular_ticket_ajustado_por_etapa,
+    filtrar_processos_por_etapa,
+)
 
 # Dependências desabilitadas - não funcionam no Streamlit Cloud
 # from google_auth_oauthlib.flow import Flow
@@ -40,6 +50,12 @@ st.set_page_config(
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_ROOT / ".env")
+
+# Iniciar scheduler de sincronização automática
+try:
+    iniciar_scheduler()
+except Exception as e:
+    print(f"Aviso: Não foi possível iniciar o scheduler de sincronização: {e}")
 
 def _get_env_or_secret(key: str, default: str = "") -> str:
     val = os.getenv(key, "")
@@ -415,15 +431,82 @@ def exibir_dashboard() -> None:
     st.dataframe(dataframe, use_container_width=True, hide_index=True)
 
 
+def exibir_grafico_eficiencia(dataframe: pd.DataFrame) -> None:
+    resultados = distribuicao_resultado(dataframe)
+    resultados = resultados.loc[resultados["Status"].isin(["GANHO", "PERDIDO"])].copy()
+    ganhos_total = int(resultados.loc[resultados["Status"] == "GANHO", "Quantidade"].iloc[0])
+    perdidos_total = int(resultados.loc[resultados["Status"] == "PERDIDO", "Quantidade"].iloc[0])
+    total_resultados = ganhos_total + perdidos_total
+    eficiencia = ganhos_total / total_resultados if total_resultados else 0
+
+    cores = alt.Scale(
+        domain=["GANHO", "PERDIDO"],
+        range=["#00e676", "#ff1744"],
+    )
+    rosca = (
+        alt.Chart(resultados)
+        .mark_arc(innerRadius=78, outerRadius=110)
+        .encode(
+            theta=alt.Theta("Quantidade:Q", stack=True),
+            color=alt.Color("Status:N", scale=cores, legend=None),
+        )
+    )
+    centro = pd.DataFrame(
+        [
+            {"x": 180, "y": 164, "texto": "Eficiência", "tamanho": 14},
+            {"x": 180, "y": 188, "texto": f"{eficiencia:.0%}", "tamanho": 30},
+        ]
+    )
+    texto_centro = (
+        alt.Chart(centro)
+        .mark_text(align="center", baseline="middle", color="#17212f", fontWeight="bold")
+        .encode(
+            x=alt.X("x:Q", scale=alt.Scale(domain=[0, 360]), axis=None),
+            y=alt.Y("y:Q", scale=alt.Scale(domain=[360, 0]), axis=None),
+            text="texto:N",
+            size=alt.Size("tamanho:Q", scale=None, legend=None),
+        )
+    )
+    grafico = (
+        alt.layer(rosca, texto_centro)
+        .properties(width="container", height=360)
+        .configure_view(stroke=None, fill="#f6f7f4")
+    )
+    st.altair_chart(grafico, width="stretch")
+
+
 def exibir_tickets() -> None:
     st.title("Tickets")
-    st.caption("Analise de honorarios por tese juridica — Processos Arquivados · Advbox CRM")
+    st.caption("Analise de honorarios por etapa do processo · Advbox CRM")
 
     api_key = _get_env_or_secret("ADVBOX_API_KEY") or _get_env_or_secret("ADVBOX_TOKEN")
     base_url = _get_env_or_secret("ADVBOX_API_URL", "https://app.advbox.com.br/api/v1")
 
     if st.button("Atualizar dados do Advbox", key="atualizar_tickets"):
-        carregar_processos_advbox.clear()
+        if not api_key:
+            st.error("ADVBOX_API_KEY não configurada. Não foi possível atualizar os dados.")
+            return
+        try:
+            with st.spinner("Verificando o Advbox e atualizando cards, tabela e planilha..."):
+                st.session_state["tickets_table_version"] = st.session_state.get("tickets_table_version", 0) + 1
+                carregar_processos_advbox.clear()
+                processos_atualizados = carregar_processos_advbox(api_key, base_url)
+                resultado_sync = exportar_agora(
+                    api_key,
+                    base_url,
+                    processos=processos_atualizados,
+                )
+                st.session_state["atualizar_timestamp"] = datetime.now().isoformat()
+            st.success(
+                f"Verificação concluída às {resultado_sync['atualizado_em']}. "
+                f"{resultado_sync['total_api']:,} registros conferidos.".replace(",", ".")
+            )
+        except IntegrationError as error:
+            st.error(f"Falha ao atualizar o Advbox: {error}")
+            return
+        except Exception as error:
+            st.error(f"Falha ao salvar a atualização: {error}")
+            return
 
     if not api_key:
         st.info("ℹ️ AMOSTRA: Estes dados são sintéticos. Configure ADVBOX_API_KEY para consultar o Advbox.")
@@ -436,25 +519,77 @@ def exibir_tickets() -> None:
             st.error(str(error))
             return
 
-    dataframe = pd.DataFrame(processos)
+    dados_excel = ler_dados_excel()
+    tickets_por_etapa = calcular_ticket_ajustado_por_etapa(processos)
+    tabela_tickets_etapa = pd.DataFrame(
+        [
+            {"Etapa do Processo": etapa, "Ticket Médio": dados["ticket_medio"]}
+            for etapa, dados in tickets_por_etapa.items()
+            if dados["ganhos"] + dados["perdidos"] > 0
+        ]
+    )
+    if not tabela_tickets_etapa.empty:
+        tabela_tickets_etapa = tabela_tickets_etapa.sort_values(
+            "Ticket Médio", ascending=False, na_position="last"
+        ).reset_index(drop=True)
+
+    table_version = st.session_state.get("tickets_table_version", 0)
+    table_key = f"tickets_por_etapa_{table_version}"
+    selection_state = st.session_state.get(table_key)
+    if isinstance(selection_state, dict):
+        selection = selection_state.get("selection", {})
+        selected_rows = selection.get("rows", []) if isinstance(selection, dict) else []
+    else:
+        selection = getattr(selection_state, "selection", None)
+        selected_rows = getattr(selection, "rows", []) or []
+
+    selected_etapa = None
+    if selected_rows and not tabela_tickets_etapa.empty:
+        selected_index = int(selected_rows[0])
+        if 0 <= selected_index < len(tabela_tickets_etapa):
+            selected_etapa = str(tabela_tickets_etapa.iloc[selected_index]["Etapa do Processo"])
+
+    processos_visiveis = filtrar_processos_por_etapa(processos, selected_etapa)
+    dataframe = pd.DataFrame(processos_visiveis)
     if dataframe.empty:
-        st.warning("A API do Advbox nao retornou processos.")
+        st.warning("A etapa selecionada não possui processos para exibir.")
         return
 
-    kpis = calcular_kpis(dataframe)
-
-    # Ler dados da planilha
-    dados_excel = ler_dados_excel()
+    dados_etapa = tickets_por_etapa.get(selected_etapa) if selected_etapa else None
+    base_comercial = (
+        dados_etapa["ticket_ajustado"]
+        if dados_etapa
+        else calcular_ticket_ajustado_geral(processos)
+    )
+    expectativa_receita = calcular_expectativa_receita(processos_visiveis)
+    prejuizo_potencial = calcular_prejuizo_potencial(processos_visiveis)
+    processos_em_andamento = (
+        contar_processos_em_andamento(dataframe)
+        if selected_etapa
+        else dados_excel["processos_em_andamento"]
+    )
+    processos_pendentes = (
+        contar_processos_pendentes(dataframe)
+        if selected_etapa
+        else dados_excel.get("processos_pendentes", 0)
+    )
+    ticket_medio = dados_etapa["ticket_medio"] if dados_etapa else dados_excel.get("ticket_medio", 0)
+    detalhe_expectativa = f"{expectativa_receita['processos_incluidos']} processos ativos com ticket histórico"
+    if expectativa_receita["sem_historico"]:
+        detalhe_expectativa += f" · {expectativa_receita['sem_historico']} sem histórico"
+    detalhe_prejuizo = f"{prejuizo_potencial['casos_incluidos']} casos sem CNJ com ticket histórico"
+    if prejuizo_potencial["sem_historico"]:
+        detalhe_prejuizo += f" · {prejuizo_potencial['sem_historico']} sem histórico"
 
     st.markdown("<div style='margin: 1.5rem 0;'></div>", unsafe_allow_html=True)
 
     kpis_data = [
-        ("Processos", f"{dados_excel['processos_em_andamento']:,}".replace(",", "."), "Em andamento"),
-        ("Pendentes", f"{dados_excel.get('processos_pendentes', 0):,}".replace(",", "."), "Não ingressados"),
-        ("Ticket Médio", _formatar_reais(dados_excel.get('ticket_medio', 0)), "Média dos honorários"),
-        ("Base Comercial", _formatar_reais(kpis["ticket_base"]), "Valor da causa indisponível na API"),
-        ("Expectativa", _formatar_reais(kpis["expectativa"]), "Honorários em aberto"),
-        ("Prejuízo Pot.", _formatar_reais(kpis["prejuizo"]), "Honorários perdidos"),
+        ("Processos", f"{processos_em_andamento:,}".replace(",", "."), "Em andamento"),
+        ("Pendentes", f"{processos_pendentes:,}".replace(",", "."), "Não ingressados"),
+        ("Ticket Médio", _formatar_reais(ticket_medio), "Média dos honorários"),
+        ("Base Comercial", _formatar_reais(base_comercial), "Ticket médio ajustado pela eficiência"),
+        ("Expectativa", _formatar_reais(expectativa_receita["valor"]), detalhe_expectativa),
+        ("Prejuízo Potencial", _formatar_reais(prejuizo_potencial["valor"]), detalhe_prejuizo),
     ]
 
     for row in range(2):
@@ -484,6 +619,86 @@ def exibir_tickets() -> None:
                         unsafe_allow_html=True,
                     )
 
+    st.markdown("<div style='margin: 0.5rem 0;'></div>", unsafe_allow_html=True)
+    tabela_coluna, eficiencia_coluna = st.columns([3, 2])
+
+    with tabela_coluna:
+        if tabela_tickets_etapa.empty:
+            st.info("A API ainda não retornou etapas com resultado ganho ou perdido.")
+        else:
+            tabela_tickets_display = tabela_tickets_etapa.copy()
+            tabela_tickets_display["Ticket Médio"] = tabela_tickets_display["Ticket Médio"].map(_formatar_reais)
+            st.caption("Selecione uma etapa para filtrar os cards e gráficos.")
+            st.dataframe(
+                tabela_tickets_display,
+                use_container_width=True,
+                hide_index=True,
+                height=360,
+                row_height=34,
+                key=table_key,
+                on_select="rerun",
+                selection_mode="single-row",
+                column_config={
+                    "Etapa do Processo": st.column_config.TextColumn(width="large"),
+                    "Ticket Médio": st.column_config.TextColumn(width="medium"),
+                },
+            )
+            if selected_etapa:
+                st.caption(f"Filtro aplicado: {selected_etapa}")
+                if st.button("Limpar filtro", key=f"limpar_filtro_tickets_{table_version}"):
+                    st.session_state["tickets_table_version"] = table_version + 1
+                    st.rerun()
+
+    with eficiencia_coluna:
+        exibir_grafico_eficiencia(dataframe)
+
+    st.markdown("<div style='margin: 1.5rem 0;'></div>", unsafe_allow_html=True)
+    coluna_fase, coluna_etapa = st.columns(2)
+
+    with coluna_fase:
+        st.subheader("Processos por fase")
+        distribuicao_fase = distribuicao_por_campo(dataframe, "stage", "Fase")
+        if distribuicao_fase.empty:
+            st.info("A API não retornou fases de processo.")
+        else:
+            altura_fase = max(300, len(distribuicao_fase) * 30)
+            grafico_fase = (
+                alt.Chart(distribuicao_fase)
+                .mark_bar(color="#168f74")
+                .encode(
+                    x=alt.X("Quantidade:Q", title="Processos"),
+                    y=alt.Y("Fase:N", sort="-x", title=None, axis=alt.Axis(labelLimit=320, labelFontSize=12)),
+                    tooltip=["Fase:N", "Quantidade:Q"],
+                )
+                .properties(height=altura_fase)
+                .configure_view(stroke=None, fill="#f6f7f4")
+                .configure_axis(labelColor="#3d4853", titleColor="#3d4853", gridColor="#d8dde2")
+            )
+            with st.container(height=360, border=False):
+                st.altair_chart(grafico_fase, width="stretch")
+
+    with coluna_etapa:
+        st.subheader("Processos por etapa")
+        distribuicao_etapa = distribuicao_por_campo(dataframe, "step", "Etapa")
+        if distribuicao_etapa.empty:
+            st.info("A API não retornou etapas de processo.")
+        else:
+            altura_etapa = max(300, len(distribuicao_etapa) * 34)
+            grafico_etapa = (
+                alt.Chart(distribuicao_etapa)
+                .mark_bar(color="#2583c5")
+                .encode(
+                    x=alt.X("Quantidade:Q", title="Processos"),
+                    y=alt.Y("Etapa:N", sort="-x", title=None, axis=alt.Axis(labelLimit=260)),
+                    tooltip=["Etapa:N", "Quantidade:Q"],
+                )
+                .properties(height=altura_etapa)
+                .configure_view(stroke=None, fill="#f6f7f4")
+                .configure_axis(labelColor="#3d4853", titleColor="#3d4853", gridColor="#d8dde2")
+            )
+            with st.container(height=360, border=False):
+                st.altair_chart(grafico_etapa, width="stretch")
+
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def carregar_processos_advbox(api_key: str, base_url: str) -> list[dict]:
@@ -497,8 +712,12 @@ def _formatar_reais(valor: float | int | None) -> str:
 
 
 def ler_dados_excel() -> dict:
-    """Lê dados do arquivo TICKET.xlsx."""
+    """Lê dados do arquivo TICKET.xlsx. Usa session_state como cache key para forçar recarregamento."""
     import openpyxl
+
+    # Usar timestamp como cache key para forçar recarregamento
+    _ = st.session_state.get("atualizar_timestamp", None)
+
     caminho_arquivo = PROJECT_ROOT / "data" / "TICKET.xlsx"
 
     if not caminho_arquivo.exists():
@@ -509,13 +728,14 @@ def ler_dados_excel() -> dict:
         ws_dados = wb["Dados"]
         ws_controle = wb["Controle"]
 
-        return {
+        dados = {
             "processos_em_andamento": ws_dados["B2"].value or 0,
             "processos_pendentes": ws_dados["B3"].value or 0,
             "ticket_medio": ws_dados["B5"].value or 0,
             "total_processos": ws_controle["B3"].value or 0,
             "atualizado_em": ws_controle["B2"].value or "Não atualizado"
         }
+        return dados
     except Exception:
         return {"processos_em_andamento": 0, "processos_pendentes": 0, "total_processos": 0, "atualizado_em": "Erro ao ler"}
 
@@ -525,7 +745,7 @@ def exibir_ticket_medio() -> None:
 
     header_col1, header_col2, header_col3 = st.columns([3, 2, 1])
     with header_col1:
-        st.caption("Analise de honorarios por tese juridica — Processos Arquivados · Advbox CRM")
+        st.caption("Analise de honorarios por etapa do processo · Processos Arquivados · Advbox CRM")
     with header_col3:
         if st.button("Atualizar dados do Advbox", key="atualizar_ticket_medio"):
             carregar_processos_advbox.clear()
@@ -550,26 +770,21 @@ def exibir_ticket_medio() -> None:
         return
 
     kpis = calcular_kpis(dataframe)
-
-    col_eficiencia, col_spacer = st.columns([1, 4])
-    with col_eficiencia:
-        if kpis["eficiencia"] is not None:
-            eficiencia_pct = f"{kpis['eficiencia']:.0%}"
-            st.markdown(
-                f"""
-                <div style='text-align: center; padding: 1.5rem 1rem;'>
-                    <div style='background: #2ecb72; border-radius: 50%; width: 120px; height: 120px;
-                    display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 0 auto;'>
-                        <div style='font-size: 2.5rem; font-weight: 800; color: white;'>{eficiencia_pct}</div>
-                    </div>
-                    <div style='margin-top: 0.8rem; font-size: 0.7rem; font-weight: 700;
-                    letter-spacing: 0.12rem; text-transform: uppercase; color: rgba(237,244,255,0.72);'>
-                        Eficiencia
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+    dados_excel = ler_dados_excel()
+    tickets_por_etapa = calcular_ticket_ajustado_por_etapa(processos)
+    base_comercial = calcular_ticket_ajustado_geral(processos)
+    expectativa_receita = calcular_expectativa_receita(processos)
+    prejuizo_potencial = calcular_prejuizo_potencial(processos)
+    detalhe_expectativa = f"{expectativa_receita['processos_incluidos']} processos ativos com ticket histórico"
+    if expectativa_receita["sem_historico"]:
+        detalhe_expectativa += f" · {expectativa_receita['sem_historico']} sem histórico"
+    detalhe_prejuizo = f"{prejuizo_potencial['casos_incluidos']} casos sem CNJ com ticket histórico"
+    if prejuizo_potencial["sem_historico"]:
+        detalhe_prejuizo += f" · {prejuizo_potencial['sem_historico']} sem histórico"
+    ganhos_total = sum(item["ganhos"] for item in tickets_por_etapa.values())
+    perdidos_total = sum(item["perdidos"] for item in tickets_por_etapa.values())
+    total_resultados = ganhos_total + perdidos_total
+    eficiencia_geral = ganhos_total / total_resultados if total_resultados else None
 
     st.markdown("<div style='margin: 1.5rem 0;'></div>", unsafe_allow_html=True)
 
@@ -577,9 +792,9 @@ def exibir_ticket_medio() -> None:
         ("Processos", f"{kpis['processos']:,}".replace(",", "."), "Total arquivados"),
         ("Pendentes", f"{kpis['pendentes']:,}".replace(",", "."), "Em andamento"),
         ("Ticket Médio", _formatar_reais(kpis["ticket_medio"]), "Média dos honorários"),
-        ("Base Comercial", _formatar_reais(kpis["ticket_base"]), "Média valor da causa"),
-        ("Expectativa", _formatar_reais(kpis["expectativa"]), "Honorários em aberto"),
-        ("Prejuízo Pot.", _formatar_reais(kpis["prejuizo"]), "Honorários perdidos"),
+        ("Base Comercial", _formatar_reais(base_comercial), "Ticket médio ajustado pela eficiência"),
+        ("Expectativa", _formatar_reais(expectativa_receita["valor"]), detalhe_expectativa),
+        ("Prejuízo Potencial", _formatar_reais(prejuizo_potencial["valor"]), detalhe_prejuizo),
     ]
 
     for row in range(2):
@@ -611,60 +826,53 @@ def exibir_ticket_medio() -> None:
 
     st.markdown("<div style='margin: 2rem 0; border-top: 1px solid rgba(124, 170, 216, 0.22);'></div>", unsafe_allow_html=True)
 
-    tese_coluna, resultado_coluna = st.columns([3, 2])
+    etapa_coluna, resultado_coluna = st.columns([3, 2])
 
-    with tese_coluna:
+    with etapa_coluna:
         st.markdown("<div style='display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;'>"
                    "<span style='font-size: 1.2rem;'>📋</span>"
                    "<span style='font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08rem; "
-                   "text-transform: uppercase; color: rgba(237,244,255,0.7);'>Ticket por tese juridica</span>"
+                   "text-transform: uppercase; color: rgba(237,244,255,0.7);'>Eficiência e ticket ajustado por etapa</span>"
                    "</div>", unsafe_allow_html=True)
-        tabela = tabela_por_tese(dataframe)
+        tabela = pd.DataFrame(
+            [
+                {
+                    "Etapa do Processo": etapa,
+                    "Ganhos": dados["ganhos"],
+                    "Perdidos": dados["perdidos"],
+                    "Eficiência": dados["eficiencia"],
+                    "Ticket Médio": dados["ticket_medio"],
+                    "Ticket Ajustado": dados["ticket_ajustado"],
+                }
+                for etapa, dados in tickets_por_etapa.items()
+                if dados["ganhos"] + dados["perdidos"] > 0
+            ]
+        )
         if not tabela.empty:
-            tabela_display = tabela.copy()
-            tabela_display.index = range(10, 10 + len(tabela_display))
+            tabela = tabela.sort_values("Ticket Ajustado", ascending=False, na_position="last")
+            tabela_display = tabela.copy().reset_index(drop=True)
+            tabela_display.index = range(1, len(tabela_display) + 1)
+            tabela_display["Eficiência"] = tabela_display["Eficiência"].map(lambda valor: f"{valor:.0%}")
             tabela_display["Ticket Médio"] = tabela_display["Ticket Médio"].map(_formatar_reais)
-            tabela_display["Taxa de Êxito"] = tabela_display["Taxa de Êxito"].map(
-                lambda valor: f"{valor:.0%}" if isinstance(valor, (float, int)) else "—"
-            )
+            tabela_display["Ticket Ajustado"] = tabela_display["Ticket Ajustado"].map(_formatar_reais)
             st.dataframe(
                 tabela_display,
                 use_container_width=True,
                 hide_index=False,
                 column_config={
-                    "Tese": st.column_config.TextColumn(width="medium"),
+                    "Etapa do Processo": st.column_config.TextColumn(width="medium"),
+                    "Ganhos": st.column_config.NumberColumn(width="small"),
+                    "Perdidos": st.column_config.NumberColumn(width="small"),
+                    "Eficiência": st.column_config.TextColumn(width="small"),
                     "Ticket Médio": st.column_config.TextColumn(width="small"),
-                    "Taxa de Êxito": st.column_config.TextColumn(width="small"),
+                    "Ticket Ajustado": st.column_config.TextColumn(width="small"),
                 }
             )
         else:
-            st.info("A resposta da API nao contem dados de tese e honorarios para montar a tabela.")
+            st.info("A API ainda não retornou processos classificados como ganhos ou perdidos.")
 
     with resultado_coluna:
-        st.markdown("<div style='display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;'>"
-                   "<span style='font-size: 1.2rem;'>🎯</span>"
-                   "<span style='font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08rem; "
-                   "text-transform: uppercase; color: rgba(237,244,255,0.7);'>Resultado dos processos</span>"
-                   "</div>", unsafe_allow_html=True)
-        resultados = distribuicao_resultado(dataframe)
-        if not resultados.empty:
-            cores = alt.Scale(
-                domain=["GANHO", "PERDIDO", "EM ANDAMENTO"],
-                range=["#2ecb72", "#e94f3d", "#3598db"],
-            )
-            grafico_resultado = (
-                alt.Chart(resultados)
-                .mark_arc(innerRadius=72)
-                .encode(
-                    theta=alt.Theta("Quantidade:Q"),
-                    color=alt.Color("Status:N", scale=cores, legend=alt.Legend(title=None, orient="bottom")),
-                    tooltip=["Status:N", "Quantidade:Q"],
-                )
-                .properties(height=300)
-            )
-            st.altair_chart(grafico_resultado, use_container_width=True)
-        else:
-            st.info("A API nao fornece status de resultado para este grafico.")
+        exibir_grafico_eficiencia(dataframe)
 
     st.markdown("<div style='margin: 2rem 0; border-top: 1px solid rgba(124, 170, 216, 0.22);'></div>", unsafe_allow_html=True)
 
@@ -785,8 +993,21 @@ def exibir_processos() -> None:
                 try:
                     with st.spinner("Exportando dados do Advbox para planilha..."):
                         resultado = exportar_agora(api_key)
+
                     st.success(f"✅ Atualizado com sucesso!")
-                    st.json(resultado)
+
+                    # Releitura dos dados
+                    import openpyxl
+                    wb = openpyxl.load_workbook(PROJECT_ROOT / "data" / "TICKET.xlsx")
+                    ws_dados = wb["Dados"]
+                    ws_controle = wb["Controle"]
+
+                    st.write("**Novos dados:**")
+                    st.write(f"🔹 Processos em Andamento: {ws_dados['B2'].value}")
+                    st.write(f"🔹 Processos Pendentes: {ws_dados['B3'].value}")
+                    st.write(f"🔹 Ticket Médio: R$ {ws_dados['B5'].value:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                    st.write(f"🔹 Atualizado em: {ws_controle['B2'].value}")
+
                 except Exception as e:
                     st.error(f"❌ Erro: {str(e)}")
 
@@ -807,9 +1028,24 @@ def exibir_processos() -> None:
 
     st.markdown("<div style='margin: 1.5rem 0;'></div>", unsafe_allow_html=True)
 
+    # Status do scheduler automático
+    with st.expander("🔄 Status da Sincronização Automática"):
+        try:
+            status = obter_status_scheduler()
+            if status["status"] == "rodando":
+                st.success("✅ Sincronização automática **ativa**")
+                st.write(f"📍 Próxima execução: **{status['proxima_execucao']}**")
+                st.write("⏰ A planilha será atualizada a cada **30 minutos** automaticamente")
+            else:
+                st.warning("⚠️ Sincronização automática não está ativa")
+        except Exception as e:
+            st.error(f"Erro ao verificar status: {e}")
+
+    st.markdown("<div style='margin: 1.5rem 0;'></div>", unsafe_allow_html=True)
+
     st.info("ℹ️ Este é o teste MVP (Mínimo Viável) da integração:\n\n"
-            "1. Clique em 'Atualizar dados do Advbox'\n"
-            "2. Os dados serão salvos em `hub-escritorio/data/TICKET.xlsx`\n"
+            "1. ✅ Sincronização **automática a cada 30 minutos**\n"
+            "2. Os dados são salvos em `hub-escritorio/data/TICKET.xlsx`\n"
             "3. Os valores acima são lidos dessa planilha\n\n"
             "Se isso funcionar, escalamos para mais dados e fórmulas!")
 

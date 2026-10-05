@@ -103,15 +103,21 @@ class ExcelExporter:
 
         return wb
 
-    def exportar_processos(self, api_key: str, base_url: str = "https://app.advbox.com.br/api/v1") -> dict[str, Any]:
+    def exportar_processos(
+        self,
+        api_key: str,
+        base_url: str = "https://app.advbox.com.br/api/v1",
+        processos: list[dict] | None = None,
+    ) -> dict[str, Any]:
         """Busca processos do Advbox e exporta para Excel."""
         import re
 
-        try:
-            client = AdvboxClient(api_key=api_key, base_url=base_url)
-            processos = client.list_lawsuits()
-        except IntegrationError as e:
-            raise IntegrationError(f"Erro ao buscar processos: {e}") from e
+        if processos is None:
+            try:
+                client = AdvboxClient(api_key=api_key, base_url=base_url)
+                processos = client.list_lawsuits()
+            except IntegrationError as e:
+                raise IntegrationError(f"Erro ao buscar processos: {e}") from e
 
         if not processos:
             raise IntegrationError("Nenhum processo foi retornado pelo Advbox.")
@@ -222,7 +228,12 @@ class ExcelExporter:
         }
 
 
-def exportar_agora(api_key: str | None = None, base_url: str | None = None) -> dict[str, Any]:
+def exportar_agora(
+    api_key: str | None = None,
+    base_url: str | None = None,
+    *,
+    processos: list[dict] | None = None,
+) -> dict[str, Any]:
     """Função auxiliar para exportar dados do Advbox para Excel."""
     api_key = api_key or os.getenv("ADVBOX_API_KEY") or os.getenv("ADVBOX_TOKEN")
     base_url = base_url or os.getenv("ADVBOX_API_URL", "https://app.advbox.com.br/api/v1")
@@ -231,20 +242,21 @@ def exportar_agora(api_key: str | None = None, base_url: str | None = None) -> d
         raise IntegrationError("ADVBOX_API_KEY não configurada.")
 
     exporter = ExcelExporter()
-    return exporter.exportar_processos(api_key, base_url)
+    return exporter.exportar_processos(api_key, base_url, processos=processos)
 
 
 if __name__ == "__main__":
     try:
         resultado = exportar_agora()
-        print(f"✅ Exportação bem-sucedida!")
+        print("OK Exportacao bem-sucedida!")
         print(f"   Arquivo: {resultado['arquivo']}")
         print(f"   Processos em Andamento: {resultado['processos_em_andamento']}")
         print(f"   Processos Arquivados: {resultado['processos_arquivados']}")
         print(f"   Processos Pendentes: {resultado['processos_pendentes']}")
-        print(f"   Ticket Médio: R$ {resultado['ticket_medio']:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-        print(f"   Total com CNJ válido: {resultado['total_com_cnj_valido']}")
+        ticket_str = f"R$ {resultado['ticket_medio']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        print(f"   Ticket Medio: {ticket_str}")
+        print(f"   Total com CNJ valido: {resultado['total_com_cnj_valido']}")
         print(f"   Total da API: {resultado['total_api']}")
         print(f"   Atualizado em: {resultado['atualizado_em']}")
     except IntegrationError as e:
-        print(f"❌ Erro: {e}")
+        print(f"ERRO: {e}")
