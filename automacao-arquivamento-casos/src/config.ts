@@ -25,9 +25,9 @@ export function getAdvBoxConfig(): AdvBoxConfig {
 }
 
 export function getAsaasConfig(): AsaasConfig {
-  const apiKey = process.env.ASAAS_API_KEY;
+  const apiKey = process.env.ASAAS_API_TOKEN;
   if (!apiKey) {
-    throw new Error('ASAAS_API_KEY não configurado');
+    throw new Error('ASAAS_API_TOKEN não configurado');
   }
 
   return {
