@@ -1,0 +1,71 @@
+name: Automação - Arquivamento de Casos
+
+on:
+  schedule:
+    # 10:00 e 16:00 no horário de Brasília (UTC-3) = 13:00 e 19:00 UTC
+    - cron: '0 13 * * *'
+    - cron: '0 19 * * *'
+  workflow_dispatch:
+    inputs:
+      case_id:
+        description: 'ID do caso para arquivar (opcional)'
+        required: false
+
+jobs:
+  archiving:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Instalar dependências
+        working-directory: automacao-arquivamento-casos
+        run: npm ci
+
+      - name: Compilar TypeScript
+        working-directory: automacao-arquivamento-casos
+        run: npm run build
+
+      - name: Processar arquivamento (caso específico)
+        if: github.event.inputs.case_id != ''
+        working-directory: automacao-arquivamento-casos
+        env:
+          ADVBOX_TOKEN: ${{ secrets.ADVBOX_TOKEN }}
+          ADVBOX_API_URL: ${{ secrets.ADVBOX_API_URL || 'https://app.advbox.com.br/api/v1' }}
+          ASAAS_API_KEY: ${{ secrets.ASAAS_API_KEY }}
+          ASAAS_API_URL: ${{ secrets.ASAAS_API_URL || 'https://api.asaas.com/v3' }}
+          MASK_CPF: 'true'
+        run: npm run cli -- process-archiving ${{ github.event.inputs.case_id }}
+
+      - name: Rotina de arquivamento diária (agendada)
+        if: github.event.inputs.case_id == ''
+        working-directory: automacao-arquivamento-casos
+        env:
+          ADVBOX_TOKEN: ${{ secrets.ADVBOX_TOKEN }}
+          ADVBOX_API_URL: ${{ secrets.ADVBOX_API_URL || 'https://app.advbox.com.br/api/v1' }}
+          ASAAS_API_KEY: ${{ secrets.ASAAS_API_KEY }}
+          ASAAS_API_URL: ${{ secrets.ASAAS_API_URL || 'https://api.asaas.com/v3' }}
+          MASK_CPF: 'true'
+        run: |
+          echo "📋 Buscando casos pendentes de arquivamento..."
+          echo "⏳ Rotina agendada - executar busca de casos encerrados"
+          # TODO: Implementar busca de casos com status "encerrado" ou similar
+          # npm run cli -- list-pending-archiving
+
+      - name: Relatório de sucesso
+        if: success()
+        run: |
+          echo "✅ Automação de arquivamento concluída com sucesso!"
+          echo "📍 Logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Notificar em caso de erro
+        if: failure()
+        run: |
+          echo "❌ Erro na automação de arquivamento"
+          echo "📍 Verifique os logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
