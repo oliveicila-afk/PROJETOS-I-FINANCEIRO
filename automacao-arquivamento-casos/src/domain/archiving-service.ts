@@ -1,5 +1,4 @@
-import { AdvBoxClient } from '../integrations/advbox-client.js';
-import { AsaasClient } from '../integrations/asaas-client.js';
+import { ArchivingAdapter } from '../integrations/archiving-adapter.js';
 
 export interface ArchivingReason {
   code: string;
@@ -34,29 +33,26 @@ export interface ArchivingInfo {
 }
 
 export class ArchivingService {
-  constructor(
-    private advboxClient: AdvBoxClient,
-    private asaasClient: AsaasClient
-  ) {}
+  constructor(private adapter: ArchivingAdapter) {}
 
   async collectArchivingInfo(caseId: string): Promise<ArchivingInfo> {
     console.log(`📋 Coletando informações de arquivamento para caso ${caseId}...`);
 
     // 1. Buscar informações básicas do caso
-    const caseDetails = await this.advboxClient.getCaseDetails(caseId);
+    const caseDetails = await this.adapter.getCaseDetails(caseId);
     console.log(`✅ Detalhes do caso obtidos`);
 
     // 2. Buscar tarefas (informativo de arquivamento)
-    const tasks = await this.advboxClient.searchTasks(caseId);
+    const tasks = await this.adapter.getCaseTasks(caseId);
     const archivingTask = tasks.find(t => t.title.includes('ARQUIVAMENTO'));
     console.log(`✅ Tarefas do caso obtidas (${tasks.length} tarefas)`);
 
     // 3. Buscar número do processo no Asaas
-    const processNumber = await this.findProcessNumberInAsaas(caseDetails.clientCPF);
+    const processNumber = await this.adapter.findProcessNumberByDescription(caseDetails.clientCPF);
     console.log(`✅ Número do processo: ${processNumber || 'não encontrado'}`);
 
     // 4. Verificar múltiplas ações do cliente
-    const clientCases = await this.advboxClient.getClientCases(caseDetails.id);
+    const clientCases = await this.adapter.getClientCases(caseDetails.id);
     const hasMultipleActions = clientCases.length > 1;
     console.log(`✅ Verificação de múltiplas ações: ${hasMultipleActions ? 'ENCONTRADAS' : 'nenhuma outra'}`);
 
@@ -106,7 +102,7 @@ Nota fiscal emitida: ${info.invoiceIssued ? 'Sim' : 'Não'}
 
 === INFORMAÇÕES DO CASO ===
 Cliente: ${info.clientName}
-CPF: ${info.clientCPF}
+CPF: ${this.maskCPF(info.clientCPF)}
 Número do processo: ${info.processNumber || 'Não encontrado'}
 Motivo de arquivamento: ${info.archivingReason}
 
@@ -124,39 +120,20 @@ Não restam obrigações a serem cumpridas, estando todas integralmente satisfei
 Realizada a baixa e o arquivamento no ADVBOX.
     `;
 
-    // 2. Criar tarefa no Advbox para Gabi
-    const task = await this.advboxClient.createTask(info.caseId, {
-      title: 'PROTOCOLO DE ARQUIVAMENTO – OBRIGAÇÕES INTEGRALMENTE CUMPRIDAS',
-      description: protocolContent,
-      assignTo: 'gabi',
-    });
+    // Criar tarefa no Advbox para Gabi
+    const task = await this.adapter.createArchivingProtocol(
+      info.caseId,
+      'PROTOCOLO DE ARQUIVAMENTO – OBRIGAÇÕES INTEGRALMENTE CUMPRIDAS',
+      protocolContent
+    );
 
     console.log(`✅ Protocolo criado (Tarefa ID: ${task.id})`);
 
     return task.id;
   }
 
-  private async findProcessNumberInAsaas(clientCPF: string): Promise<string | null> {
-    try {
-      const payments = await this.asaasClient.searchPaymentsByDescription(clientCPF);
-
-      for (const payment of payments) {
-        const processNumber = this.asaasClient.extractProcessNumber(payment.description);
-        if (processNumber) {
-          return processNumber;
-        }
-      }
-
-      return null;
-    } catch (error) {
-      console.error('Erro ao buscar processo no Asaas:', error);
-      return null;
-    }
-  }
-
   private extractSucumbencialFromTasks(tasks: { description: string }[]): number | null {
     for (const task of tasks) {
-      // Procura por padrão: sucumbencial: R$ XXXX ou sucumbencial R$ XXXX
       const match = task.description.match(/sucumbencial[:\s]R\$\s?([\d.,]+)/i);
       if (match) {
         const value = match[1].replace('.', '').replace(',', '.');
@@ -165,5 +142,11 @@ Realizada a baixa e o arquivamento no ADVBOX.
     }
 
     return null;
+  }
+
+  private maskCPF(cpf: string): string {
+    // Mostra apenas últimos 3 dígitos: XXX.XXX.XXX-00
+    if (!cpf || cpf.length < 3) return cpf;
+    return `${'*'.repeat(cpf.length - 3)}${cpf.slice(-3)}`;
   }
 }

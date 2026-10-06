@@ -1,7 +1,6 @@
 import { getAdvBoxConfig, getAsaasConfig } from './config.js';
-import { AdvBoxClient } from './integrations/advbox-client.js';
-import { AsaasClient } from './integrations/asaas-client.js';
-import { ArchivingService } from './domain/archiving-service.js';
+import { ArchivingAdapter } from './integrations/archiving-adapter.js';
+import { ArchivingService, ARCHIVING_REASONS } from './domain/archiving-service.js';
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -32,25 +31,52 @@ Comandos:
     Fluxo completo: coleta info + cria protocolo
     Exemplo: npm run cli -- process-archiving CASO123
 
+  validate-connection
+    Testa conectividade com Advbox e Asaas
+
   list-archiving-reasons
     Lista todos os motivos de arquivamento disponíveis
 
 Variáveis de ambiente necessárias:
   - ADVBOX_TOKEN: Token de autenticação do Advbox
-  - ADVBOX_API_URL: URL da API do Advbox (opcional)
   - ASAAS_API_KEY: Chave de API do Asaas
-  - ASAAS_API_URL: URL da API do Asaas (opcional)
+
+Opcionais:
+  - ADVBOX_API_URL: URL da API do Advbox
+  - ASAAS_API_URL: URL da API do Asaas
       `);
       return;
     }
 
-    // Inicializar clientes
-    const advboxConfig = getAdvBoxConfig();
-    const asaasConfig = getAsaasConfig();
-    const advboxClient = new AdvBoxClient(advboxConfig);
-    const asaasClient = new AsaasClient(asaasConfig);
-    const archivingService = new ArchivingService(advboxClient, asaasClient);
+    // Inicializar dependências
+    let advboxConfig, asaasConfig;
+    try {
+      advboxConfig = getAdvBoxConfig();
+      asaasConfig = getAsaasConfig();
+    } catch (error) {
+      console.error(`❌ Erro de configuração: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`\n📝 Verifique o arquivo .env (copie de .env.example e preencha as credenciais)`);
+      process.exit(1);
+    }
 
+    const adapter = new ArchivingAdapter(advboxConfig, asaasConfig);
+    const archivingService = new ArchivingService(adapter);
+
+    // === VALIDATE CONNECTION ===
+    if (command === 'validate-connection') {
+      console.log(`\n🔗 Validando conectividade...\n`);
+      const isConnected = await adapter.validateConnectivity();
+
+      if (isConnected) {
+        console.log(`\n✅ Todas as conexões OK. Sistema pronto para usar.\n`);
+        return;
+      } else {
+        console.error(`\n❌ Falha na conectividade. Verifique suas credenciais.\n`);
+        process.exit(1);
+      }
+    }
+
+    // === COLLECT INFO ===
     if (command === 'collect-info' && args[0]) {
       const caseId = args[0];
       console.log(`\n📋 Coletando informações para caso: ${caseId}\n`);
@@ -59,7 +85,7 @@ Variáveis de ambiente necessárias:
 
       console.log('\n=== INFORMAÇÕES COLETADAS ===\n');
       console.log(`Cliente: ${info.clientName}`);
-      console.log(`CPF: ${info.clientCPF}`);
+      console.log(`CPF: ${info.clientCPF.replace(/\d(?=\d{3})/g, '*')}`); // Mascarado
       console.log(`Número do processo: ${info.processNumber || 'Não encontrado'}`);
       console.log(`Motivo: ${info.archivingReason}`);
       console.log(`Múltiplas ações: ${info.hasMultipleActions ? 'SIM ⚠️' : 'Não'}`);
@@ -75,6 +101,7 @@ Variáveis de ambiente necessárias:
       return;
     }
 
+    // === CREATE PROTOCOL ===
     if (command === 'create-protocol' && args[0]) {
       const caseId = args[0];
       console.log(`\n📄 Criando protocolo para caso: ${caseId}\n`);
@@ -89,6 +116,7 @@ Variáveis de ambiente necessárias:
       return;
     }
 
+    // === PROCESS ARCHIVING ===
     if (command === 'process-archiving' && args[0]) {
       const caseId = args[0];
       console.log(`\n🔄 Processando arquivamento completo para caso: ${caseId}\n`);
@@ -106,7 +134,7 @@ Variáveis de ambiente necessárias:
         console.log(`\n⚠️  ATENÇÃO - ALERTAS ENCONTRADOS:\n`);
         info.alerts.forEach(alert => console.log(`  ${alert}`));
         console.log(`\n⏸️  OPERAÇÃO PAUSADA - Resolva os alertas acima antes de continuar.\n`);
-        return;
+        process.exit(1);
       }
 
       // 2. Criar protocolo
@@ -122,8 +150,8 @@ Variáveis de ambiente necessárias:
       return;
     }
 
+    // === LIST ARCHIVING REASONS ===
     if (command === 'list-archiving-reasons') {
-      const { ARCHIVING_REASONS } = await import('./domain/archiving-service.js');
       console.log('\n📋 Motivos de Arquivamento Disponíveis:\n');
 
       ARCHIVING_REASONS.forEach((reason, index) => {
@@ -137,7 +165,16 @@ Variáveis de ambiente necessárias:
     console.error(`❌ Comando desconhecido: ${command}`);
     process.exit(1);
   } catch (error) {
-    console.error('❌ Erro:', error instanceof Error ? error.message : String(error));
+    if (error && typeof error === 'object' && 'code' in error && 'message' in error) {
+      // Erro formatado do adapter
+      const err = error as { code: string; message: string; details?: string };
+      console.error(`\n❌ Erro [${err.code}]: ${err.message}`);
+      if (err.details) {
+        console.error(`📝 Detalhes: ${err.details}`);
+      }
+    } else {
+      console.error(`\n❌ Erro: ${error instanceof Error ? error.message : String(error)}`);
+    }
     process.exit(1);
   }
 }
