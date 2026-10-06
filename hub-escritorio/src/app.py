@@ -132,7 +132,9 @@ def aplicar_estilo() -> None:
 
         .stButton > button, [data-testid="stFormSubmitButton"] > button { background: #8dd9c5; border: 1px solid #8dd9c5; border-radius: 8px; color: #062235; font-family: 'DM Sans', sans-serif; font-weight: 700; min-height: 2.65rem; }
         .stButton > button:hover, [data-testid="stFormSubmitButton"] > button:hover { background: #9fe9d6; border-color: #9fe9d6; color: #062235; }
-        [data-testid="stTextInput"] input, [data-baseweb="select"] > div, [data-testid="stDateInput"] input, [data-testid="stNumberInput"] input { background: rgba(255,255,255,.04); border-color: rgba(124, 170, 216, 0.28); color: #edf4ff; border-radius: 8px; }
+        [data-testid="stTextInput"] input, [data-baseweb="select"] > div, [data-testid="stDateInput"] input, [data-testid="stNumberInput"] input { background: rgba(255,255,255,.04); border-color: rgba(124, 170, 216, 0.28); color: #edf4ff !important; border-radius: 8px; }
+        [data-testid="stTextInput"] input::placeholder, [data-testid="stPasswordInput"] input::placeholder { color: rgba(237,244,255,0.5) !important; }
+        [data-testid="stTextInput"] input, [data-testid="stPasswordInput"] input { color: #edf4ff !important; font-size: 1rem !important; }
         [data-testid="stDataFrame"] { border: 1px solid rgba(124, 170, 216, 0.25); border-radius: 12px; overflow: hidden; background: rgba(12, 29, 52, 0.9); }
         details { background: rgba(12,29,52,0.9); border: 1px solid rgba(124, 170, 216, 0.25); border-radius: 8px; color: #edf4ff; max-width: 390px; }
         [data-testid="stAlert"] { border-radius: 8px; }
