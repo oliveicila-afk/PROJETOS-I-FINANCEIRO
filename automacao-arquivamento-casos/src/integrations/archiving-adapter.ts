@@ -1,6 +1,7 @@
 import { AdvBoxClient, AdvBoxCase, AdvBoxTask } from './advbox-client.js';
 import { AsaasClient, AsaasPayment } from './asaas-client.js';
 import { AdvBoxConfig, AsaasConfig } from '../config.js';
+import { CredentialManager } from '../utils/credential-manager.js';
 
 export interface AdapterError {
   code: string;
@@ -75,6 +76,11 @@ export class ArchivingAdapter {
 
       return null;
     } catch (error) {
+      // Detecta se é erro de autenticação (chave expirada/inválida)
+      if (CredentialManager.isAuthenticationError(error)) {
+        console.error(CredentialManager.getAuthErrorMessage('ASAAS_API_TOKEN'));
+      }
+
       // Log o erro mas não falha o fluxo — é um alerta, não um bloqueador
       console.warn(
         `⚠️ Aviso: Erro ao buscar processo no Asaas: ${error instanceof Error ? error.message : String(error)}`

@@ -1,0 +1,74 @@
+name: ⏰ Verificar Expiração - Token Asaas
+
+on:
+  schedule:
+    # Verifica a cada segunda-feira às 09:00 (Brasília)
+    # = 12:00 UTC
+    - cron: '0 12 * * 1'
+  workflow_dispatch:
+
+jobs:
+  check-expiration:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Instalar dependências
+        working-directory: automacao-arquivamento-casos
+        run: npm ci
+
+      - name: Compilar TypeScript
+        working-directory: automacao-arquivamento-casos
+        run: npm run build
+
+      - name: Verificar expiração do token Asaas
+        working-directory: automacao-arquivamento-casos
+        env:
+          ASAAS_API_TOKEN: ${{ secrets.ASAAS_API_TOKEN }}
+          # Data de criação do token: 28 de setembro de 2026
+          # Expira em: 28 de dezembro de 2026
+          ASAAS_TOKEN_CREATED_DATE: '2026-09-28'
+          MASK_CPF: 'true'
+        run: |
+          node dist/utils/check-credential-expiration.js || true
+
+      - name: Enviar alerta se próximo de expirar
+        if: failure()
+        uses: davisgio/github-action-send-email@v1
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: '⏰ ALERTA: Token Asaas próximo de expirar'
+          to: oliveicila@gmail.com
+          from: 'GitHub Actions - Projetos Financeiro'
+          body: |
+            Olá Priscila,
+
+            O token ASAAS_API_TOKEN está próximo de expirar!
+
+            📅 Data de Criação: 28 de setembro de 2026
+            📅 Data de Expiração: 28 de dezembro de 2026
+
+            ⚠️ IMPORTANTE: O Asaas renova seu token a cada 3 meses obrigatoriamente.
+
+            🔧 AÇÃO NECESSÁRIA:
+            1. Acesse: https://app.asaas.com (painel do Asaas)
+            2. Gere uma nova chave API
+            3. Copie a nova chave
+            4. Atualize em: https://github.com/oliveicila-afk/PROJETOS-I-FINANCEIRO/settings/secrets/actions
+            5. Edite ASAAS_API_TOKEN com a nova chave
+            6. Atualize também ASAAS_TOKEN_CREATED_DATE com a data de hoje
+
+            Mais informações: https://github.com/oliveicila-afk/PROJETOS-I-FINANCEIRO/actions/workflows/verificar-expiracao-asaas.yml
+
+            ---
+            🤖 GitHub Actions - Automação

@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { CredentialManager } from './utils/credential-manager.js';
 
 export interface AdvBoxConfig {
   apiUrl: string;
@@ -28,6 +29,16 @@ export function getAsaasConfig(): AsaasConfig {
   const apiKey = process.env.ASAAS_API_TOKEN;
   if (!apiKey) {
     throw new Error('ASAAS_API_TOKEN não configurado');
+  }
+
+  // Valida expiração da chave se a data de criação estiver informada
+  const asaasCreatedDate = process.env.ASAAS_TOKEN_CREATED_DATE;
+  if (asaasCreatedDate) {
+    const expirationInfo = CredentialManager.checkExpiration(
+      asaasCreatedDate,
+      'ASAAS_API_TOKEN'
+    );
+    CredentialManager.logExpirationStatus(expirationInfo);
   }
 
   return {

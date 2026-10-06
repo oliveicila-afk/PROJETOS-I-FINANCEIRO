@@ -40,6 +40,7 @@ jobs:
           ADVBOX_API_URL: ${{ secrets.ADVBOX_API_URL || 'https://app.advbox.com.br/api/v1' }}
           ASAAS_API_TOKEN: ${{ secrets.ASAAS_API_TOKEN }}
           ASAAS_API_URL: ${{ secrets.ASAAS_API_URL || 'https://api.asaas.com/v3' }}
+          ASAAS_TOKEN_CREATED_DATE: ${{ secrets.ASAAS_TOKEN_CREATED_DATE || '2026-09-28' }}
           MASK_CPF: 'true'
         run: npm run cli -- process-archiving ${{ github.event.inputs.case_id }}
 
@@ -51,6 +52,7 @@ jobs:
           ADVBOX_API_URL: ${{ secrets.ADVBOX_API_URL || 'https://app.advbox.com.br/api/v1' }}
           ASAAS_API_TOKEN: ${{ secrets.ASAAS_API_TOKEN }}
           ASAAS_API_URL: ${{ secrets.ASAAS_API_URL || 'https://api.asaas.com/v3' }}
+          ASAAS_TOKEN_CREATED_DATE: ${{ secrets.ASAAS_TOKEN_CREATED_DATE || '2026-09-28' }}
           MASK_CPF: 'true'
         run: |
           echo "📋 Buscando casos pendentes de arquivamento..."
