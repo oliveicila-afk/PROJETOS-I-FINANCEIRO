@@ -58,7 +58,7 @@ async function retrieveArchivedCases() {
     let hasMore = true;
 
     while (hasMore) {
-      const response = await makeRequest('GET', `/cases?status=archived&limit=${limit}&offset=${offset}`);
+      const response = await makeRequest('GET', `/lawsuits?exit_execution_end=2026-10-06&limit=${limit}&offset=${offset}`);
 
       if (response.status !== 200) {
         console.error(`Error fetching cases: Status ${response.status}`);
