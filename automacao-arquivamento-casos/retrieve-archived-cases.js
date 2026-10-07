@@ -66,7 +66,9 @@ async function retrieveArchivedCases() {
         break;
       }
 
-      const cases = response.data?.cases || response.data || [];
+      console.log(`DEBUG: Response structure:`, JSON.stringify(response.data).substring(0, 200));
+
+      const cases = response.data?.cases || response.data?.lawsuits || response.data || [];
       if (Array.isArray(cases) && cases.length > 0) {
         allCases = allCases.concat(cases);
         console.log(`  ✓ Fetched ${cases.length} cases (offset: ${offset})`);
