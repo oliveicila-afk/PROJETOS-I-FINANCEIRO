@@ -99,6 +99,46 @@ Config (src/config.ts) ← Credenciais via .env
 - Revisar mascaramento de CPF em todas as saídas
 - Definir política de rotação de tokens Advbox/Asaas
 
+## Campos de Percentual ("% do Escritório")
+
+### Objetivo
+Extrair o percentual de honorários do escritório ("Percentual de honorários (%)") de cada caso arquivado para habilitar a automação completa do workflow de arquivamento.
+
+### Desafio Técnico
+A API do AdvBox pode usar diferentes nomes para o campo de percentual. O campo é exibido como "Percentual de honorários (%)" na UI, mas o nome da chave na API resposta pode variar.
+
+### Abordagem
+
+**1. Discovery (debug-api-fields.js)**
+- Script que inspeciona um único caso da API
+- Retorna: estrutura completa da resposta JSON, todas as chaves disponíveis, valores de campos relacionados a percentual/honorários
+- Uso: `npm run debug-api-fields` ou via GitHub Actions workflow `Debug AdvBox API Fields`
+- Saída: arquivo JSON com primeiro caso completo em `/tmp/api_debug_first_lawsuit.json`
+
+**2. Extraction (retrieve-archived-cases.js)**
+- Tenta múltiplos nomes de campo em ordem de probabilidade:
+  - `fee_percentage` (mais provável)
+  - `honorarios_percentual` (variante português)
+  - `percentual_honorarios` (ordem invertida)
+  - `percentual` (genérico)
+  - `percentage` (inglês)
+- Reporta qual campo foi encontrado e em quantos casos
+- Alerta se nenhum campo de percentual foi encontrado (sugere usar debug)
+
+**3. Robustez**
+- Valor padrão: 0 se nenhum campo encontrado
+- Tracking: contadores de quantos casos têm percentual vs não têm
+- Logging: output claro de quais campos foram detectados
+
+### Próximos Passos Após Discovery
+1. Se nenhum percentual encontrado: revisar output do debug script
+2. Se percentual encontrado com nome diferente: atualizar script extract com nome correto
+3. Validar que valores fazem sentido (0-100%)
+4. Testar rounding behavior (valores decimais como 19.97% exibidos como 20% na UI)
+
+### Rounding Behavior
+Conhecimento do usuário: percentagens com decimal (19.97%) são arredondadas para exibição inteira na UI (20%). Valores na API podem conter decimais; sistema de arquivamento posterior pode precisar de precisão decimal.
+
 ## Segurança de Dados
 
 1. **Credenciais:** Apenas em GitHub Secrets, nunca em código

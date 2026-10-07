@@ -103,8 +103,33 @@ async function retrieveArchivedCases() {
     console.log('📑 Step 2: Processing archived cases data...\n');
     const archivedCasesDetails = [];
 
+    // Track which percentage field names are found in the data
+    let percentageFieldsFound = new Set();
+    let percentageFieldsNotFound = 0;
+
     for (let i = 0; i < allCases.length; i++) {
       const caseItem = allCases[i];
+
+      // Find percentage field - check multiple possible names
+      let feePercentage = 0;
+      if (caseItem.fee_percentage !== undefined) {
+        feePercentage = caseItem.fee_percentage;
+        percentageFieldsFound.add('fee_percentage');
+      } else if (caseItem.honorarios_percentual !== undefined) {
+        feePercentage = caseItem.honorarios_percentual;
+        percentageFieldsFound.add('honorarios_percentual');
+      } else if (caseItem.percentual_honorarios !== undefined) {
+        feePercentage = caseItem.percentual_honorarios;
+        percentageFieldsFound.add('percentual_honorarios');
+      } else if (caseItem.percentual !== undefined) {
+        feePercentage = caseItem.percentual;
+        percentageFieldsFound.add('percentual');
+      } else if (caseItem.percentage !== undefined) {
+        feePercentage = caseItem.percentage;
+        percentageFieldsFound.add('percentage');
+      } else {
+        percentageFieldsNotFound++;
+      }
 
       archivedCasesDetails.push({
         id: caseItem.id,
@@ -117,7 +142,7 @@ async function retrieveArchivedCases() {
         exit_execution_date: caseItem.exit_execution_date || 'N/A',
         fees_expec: caseItem.fees_expec || 0,
         fees_money: caseItem.fees_money || 0,
-        fee_percentage: caseItem.fee_percentage || caseItem.honorarios_percentual || 0,
+        fee_percentage: feePercentage,
         raw_details: caseItem
       });
 
@@ -126,6 +151,24 @@ async function retrieveArchivedCases() {
       }
     }
     console.log(`  ✓ Processed all ${allCases.length} cases`);
+
+    // Report field detection
+    if (percentageFieldsFound.size > 0) {
+      console.log(`\n📊 Percentage field detection:`);
+      percentageFieldsFound.forEach(field => {
+        const count = archivedCasesDetails.filter(c => {
+          const item = c.raw_details;
+          return item[field] !== undefined;
+        }).length;
+        console.log(`  ✅ Found "${field}" in ${count} cases`);
+      });
+      if (percentageFieldsNotFound > 0) {
+        console.log(`  ⚠️  ${percentageFieldsNotFound} cases missing percentage value`);
+      }
+    } else {
+      console.log(`\n⚠️  No percentage fields found in any cases`);
+      console.log(`  💡 Check API response structure using debug-api-fields.js workflow`);
+    }
 
     // Step 3: Analyze patterns
     console.log('\n📊 Step 3: Analyzing patterns...\n');

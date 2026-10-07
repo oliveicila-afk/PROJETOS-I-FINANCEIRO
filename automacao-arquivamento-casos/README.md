@@ -66,6 +66,27 @@ Para executar manualmente:
 2. Clicar em **Run workflow**
 3. Opcionalmente informar ID do caso
 
+### Scripts de Debug
+
+#### Inspeccionar Campos da API AdvBox
+
+Para diagnosticar quais campos estão disponíveis na API do AdvBox:
+
+1. Ir para **Actions** > **Debug AdvBox API Fields**
+2. Clicar em **Run workflow**
+3. Verificar o log de saída para ver a estrutura da resposta
+4. Baixar o artefato `api-debug-results` para inspecionar o JSON completo
+
+Este script ajuda a identificar:
+- Nomes exatos dos campos disponíveis
+- Valores de campos de percentual/honorários
+- Estrutura completa da resposta da API
+
+**Útil quando:**
+- Novos campos precisam ser extraídos
+- Mudanças na API afetam os nomes dos campos
+- Precisão de dados de percentual/honorários está em dúvida
+
 ## 🔐 Variáveis de Ambiente
 
 Obrigatórias:

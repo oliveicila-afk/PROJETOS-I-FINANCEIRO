@@ -1,0 +1,42 @@
+name: Debug AdvBox API Fields
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+jobs:
+  debug-fields:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Run API field debug script
+        env:
+          ADVBOX_TOKEN: ${{ secrets.ADVBOX_TOKEN }}
+        run: |
+          cd automacao-arquivamento-casos
+          node debug-api-fields.js
+
+      - name: Upload debug results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-debug-results
+          path: /tmp/api_debug_*.json
+          retention-days: 7
+
+      - name: Comment on completion
+        if: always()
+        run: |
+          echo "✅ API Debug completed!"
+          echo ""
+          if [ -f /tmp/api_debug_first_lawsuit.json ]; then
+            echo "📋 First lawsuit structure:"
+            head -50 /tmp/api_debug_first_lawsuit.json
+          fi
