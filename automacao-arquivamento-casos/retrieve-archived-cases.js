@@ -50,15 +50,15 @@ async function retrieveArchivedCases() {
   console.log('🔍 Retrieving archived cases from AdvBox API...\n');
 
   try {
-    // Step 1: Search for archived cases
+    // Step 1: Search for archived cases with date filter (up to Oct 6, 2026)
     console.log('📋 Step 1: Fetching archived cases...');
     let allCases = [];
     let offset = 0;
-    const limit = 50;
+    const limit = 100; // Increased to reduce number of requests
     let hasMore = true;
 
     while (hasMore) {
-      const response = await makeRequest('GET', `/lawsuits?limit=${limit}&offset=${offset}`);
+      const response = await makeRequest('GET', `/lawsuits?limit=${limit}&offset=${offset}&exit_execution_end=2026-10-06`);
 
       if (response.status !== 200) {
         console.error(`Error fetching cases: Status ${response.status}`);
@@ -66,12 +66,10 @@ async function retrieveArchivedCases() {
         break;
       }
 
-      console.log(`DEBUG: Response structure:`, JSON.stringify(response.data).substring(0, 200));
-
       const cases = response.data?.data || response.data?.cases || response.data?.lawsuits || [];
       if (Array.isArray(cases) && cases.length > 0) {
         allCases = allCases.concat(cases);
-        console.log(`  ✓ Fetched ${cases.length} cases (offset: ${offset})`);
+        console.log(`  ✓ Fetched ${cases.length} cases (offset: ${offset}, total so far: ${allCases.length})`);
         offset += limit;
         hasMore = cases.length === limit;
       } else {
@@ -86,45 +84,32 @@ async function retrieveArchivedCases() {
       return;
     }
 
-    // Step 2: Retrieve details for each case
-    console.log('📑 Step 2: Retrieving detailed information for each case...\n');
+    // Step 2: Process cases directly from listing (avoiding individual requests)
+    console.log('📑 Step 2: Processing archived cases data...\n');
     const archivedCasesDetails = [];
 
     for (let i = 0; i < allCases.length; i++) {
       const caseItem = allCases[i];
-      const caseId = caseItem.id || caseItem.case_id;
 
-      console.log(`Processing case ${i + 1}/${allCases.length}: ${caseId}`);
+      archivedCasesDetails.push({
+        id: caseItem.id,
+        case_number: caseItem.process_number || 'N/A',
+        protocol_number: caseItem.protocol_number || 'N/A',
+        client_name: caseItem.responsible || 'N/A',
+        case_description: caseItem.description || 'N/A',
+        status: caseItem.status || 'archived',
+        created_at: caseItem.created_at || 'N/A',
+        exit_execution_date: caseItem.exit_execution_date || 'N/A',
+        fees_expec: caseItem.fees_expec || 0,
+        fees_money: caseItem.fees_money || 0,
+        raw_details: caseItem
+      });
 
-      try {
-        // Get case details
-        const detailsResponse = await makeRequest('GET', `/cases/${caseId}`);
-        const caseDetails = detailsResponse.data;
-
-        // Get case tasks
-        const tasksResponse = await makeRequest('GET', `/cases/${caseId}/tasks`);
-        const caseTasks = tasksResponse.data?.tasks || [];
-
-        archivedCasesDetails.push({
-          id: caseId,
-          case_number: caseDetails?.case_number || caseDetails?.numero || 'N/A',
-          client_name: caseDetails?.client_name || caseDetails?.cliente || 'N/A',
-          case_description: caseDetails?.description || caseDetails?.descricao || 'N/A',
-          status: caseDetails?.status || 'archived',
-          archived_date: caseDetails?.archived_at || caseDetails?.data_arquivamento || 'N/A',
-          archiving_stage: caseDetails?.archiving_stage || caseDetails?.etapa_arquivamento || 'N/A',
-          total_honoraries: caseDetails?.total_honoraries || caseDetails?.valor_honorarios || 0,
-          latest_task: caseTasks.length > 0 ? caseTasks[caseTasks.length - 1] : null,
-          all_tasks: caseTasks,
-          raw_details: caseDetails
-        });
-
-        // Small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
-      } catch (err) {
-        console.error(`  ✗ Error retrieving details for case ${caseId}:`, err.message);
+      if ((i + 1) % 500 === 0) {
+        console.log(`  ✓ Processed ${i + 1}/${allCases.length} cases`);
       }
     }
+    console.log(`  ✓ Processed all ${allCases.length} cases`);
 
     // Step 3: Analyze patterns
     console.log('\n📊 Step 3: Analyzing patterns...\n');
@@ -144,72 +129,75 @@ async function retrieveArchivedCases() {
 }
 
 function analyzePatterns(cases) {
-  // Pattern 1: Archiving stages distribution
-  const stageDistribution = {};
+  // Pattern 1: Exit execution date distribution
+  const dateDistribution = {};
   cases.forEach(c => {
-    const stage = c.archiving_stage || 'unknown';
-    stageDistribution[stage] = (stageDistribution[stage] || 0) + 1;
+    const date = c.exit_execution_date ? c.exit_execution_date.split('T')[0] : 'unknown';
+    dateDistribution[date] = (dateDistribution[date] || 0) + 1;
   });
 
-  console.log('📌 Pattern 1 - Archiving Stages Distribution:');
-  Object.entries(stageDistribution).forEach(([stage, count]) => {
-    const percentage = ((count / cases.length) * 100).toFixed(1);
-    console.log(`  • ${stage}: ${count} cases (${percentage}%)`);
-  });
-
-  // Pattern 2: Honoraries analysis
-  const honorariesValues = cases
-    .map(c => parseFloat(c.total_honoraries) || 0)
-    .filter(v => v > 0)
-    .sort((a, b) => b - a);
-
-  if (honorariesValues.length > 0) {
-    const sum = honorariesValues.reduce((a, b) => a + b, 0);
-    const avg = sum / honorariesValues.length;
-    const max = honorariesValues[0];
-    const min = honorariesValues[honorariesValues.length - 1];
-
-    console.log('\n📌 Pattern 2 - Honoraries Analysis:');
-    console.log(`  • Total amount: R$ ${sum.toFixed(2)}`);
-    console.log(`  • Average per case: R$ ${avg.toFixed(2)}`);
-    console.log(`  • Maximum: R$ ${max.toFixed(2)}`);
-    console.log(`  • Minimum: R$ ${min.toFixed(2)}`);
-    console.log(`  • Cases with honoraries: ${honorariesValues.length}/${cases.length}`);
-  }
-
-  // Pattern 3: Most common client names
-  const clientDistribution = {};
-  cases.forEach(c => {
-    const client = c.client_name || 'Unknown';
-    clientDistribution[client] = (clientDistribution[client] || 0) + 1;
-  });
-
-  const topClients = Object.entries(clientDistribution)
+  const sortedDates = Object.entries(dateDistribution)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10);
 
-  console.log('\n📌 Pattern 3 - Top 10 Clients by Case Count:');
-  topClients.forEach(([client, count], idx) => {
-    console.log(`  ${idx + 1}. ${client}: ${count} cases`);
+  console.log('📌 Pattern 1 - Top 10 Exit Execution Dates:');
+  sortedDates.forEach(([date, count]) => {
+    const percentage = ((count / cases.length) * 100).toFixed(1);
+    console.log(`  • ${date}: ${count} cases (${percentage}%)`);
   });
 
-  // Pattern 4: Task analysis from latest tasks
-  const taskAssignees = {};
-  cases.forEach(c => {
-    if (c.latest_task && c.latest_task.assigned_to) {
-      const assignee = c.latest_task.assigned_to;
-      taskAssignees[assignee] = (taskAssignees[assignee] || 0) + 1;
-    }
-  });
+  // Pattern 2: Fees analysis (fees_money)
+  const feesValues = cases
+    .map(c => parseFloat(c.fees_money) || 0)
+    .filter(v => v > 0)
+    .sort((a, b) => b - a);
 
-  if (Object.keys(taskAssignees).length > 0) {
-    console.log('\n📌 Pattern 4 - Final Task Assignees (Usually Financial Summary):');
-    Object.entries(taskAssignees)
-      .sort((a, b) => b[1] - a[1])
-      .forEach(([assignee, count]) => {
-        console.log(`  • ${assignee}: ${count} cases`);
-      });
+  if (feesValues.length > 0) {
+    const sum = feesValues.reduce((a, b) => a + b, 0);
+    const avg = sum / cases.length; // Average across all cases
+    const max = feesValues[0];
+    const min = feesValues[feesValues.length - 1];
+
+    console.log('\n📌 Pattern 2 - Fees Analysis:');
+    console.log(`  • Total amount: R$ ${sum.toFixed(2)}`);
+    console.log(`  • Average per case (all): R$ ${avg.toFixed(2)}`);
+    console.log(`  • Average per case (with fees): R$ ${(sum / feesValues.length).toFixed(2)}`);
+    console.log(`  • Maximum: R$ ${max.toFixed(2)}`);
+    console.log(`  • Minimum: R$ ${min.toFixed(2)}`);
+    console.log(`  • Cases with fees: ${feesValues.length}/${cases.length} (${((feesValues.length / cases.length) * 100).toFixed(1)}%)`);
   }
+
+  // Pattern 3: Most common responsible parties
+  const responsibleDistribution = {};
+  cases.forEach(c => {
+    const responsible = c.client_name && c.client_name !== 'N/A' ? c.client_name : 'Unknown';
+    responsibleDistribution[responsible] = (responsibleDistribution[responsible] || 0) + 1;
+  });
+
+  const topResponsible = Object.entries(responsibleDistribution)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10);
+
+  console.log('\n📌 Pattern 3 - Top 10 Responsible Parties:');
+  topResponsible.forEach(([responsible, count], idx) => {
+    const percentage = ((count / cases.length) * 100).toFixed(1);
+    console.log(`  ${idx + 1}. ${responsible}: ${count} cases (${percentage}%)`);
+  });
+
+  // Pattern 4: Status distribution
+  const statusDistribution = {};
+  cases.forEach(c => {
+    const status = c.status || 'unknown';
+    statusDistribution[status] = (statusDistribution[status] || 0) + 1;
+  });
+
+  console.log('\n📌 Pattern 4 - Status Distribution:');
+  Object.entries(statusDistribution)
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([status, count]) => {
+      const percentage = ((count / cases.length) * 100).toFixed(1);
+      console.log(`  • ${status}: ${count} cases (${percentage}%)`);
+    });
 
   console.log('\n✓ Pattern analysis complete!');
 }
