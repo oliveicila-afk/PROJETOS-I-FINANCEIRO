@@ -1,4 +1,5 @@
-const https = require('https');
+import https from 'https';
+import fs from 'fs';
 
 // Configuration
 const ADVBOX_API_URL = 'https://app.advbox.com.br/api/v1';
@@ -129,7 +130,6 @@ async function retrieveArchivedCases() {
 
     // Step 4: Output results
     console.log('\n💾 Step 4: Saving detailed results...\n');
-    const fs = require('fs');
     fs.writeFileSync('/tmp/archived_cases_detailed.json', JSON.stringify(archivedCasesDetails, null, 2));
     console.log('✓ Detailed case data saved to: /tmp/archived_cases_detailed.json');
 
