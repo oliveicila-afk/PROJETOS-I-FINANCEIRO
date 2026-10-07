@@ -58,22 +58,37 @@ async function retrieveArchivedCases() {
     let hasMore = true;
 
     while (hasMore) {
-      const response = await makeRequest('GET', `/lawsuits?limit=${limit}&offset=${offset}&exit_execution_end=2026-10-06`);
+      try {
+        const response = await makeRequest('GET', `/lawsuits?limit=${limit}&offset=${offset}&exit_execution_end=2026-10-06`);
 
-      if (response.status !== 200) {
-        console.error(`Error fetching cases: Status ${response.status}`);
-        console.error(response.data);
+        if (response.status === 429) {
+          // Rate limited - wait and retry
+          console.log('  ⏳ Rate limited (429). Waiting 30 seconds before retry...');
+          await new Promise(resolve => setTimeout(resolve, 30000));
+          continue;
+        }
+
+        if (response.status !== 200) {
+          console.error(`Error fetching cases: Status ${response.status}`);
+          console.error(response.data);
+          break;
+        }
+
+        const cases = response.data?.data || response.data?.cases || response.data?.lawsuits || [];
+        if (Array.isArray(cases) && cases.length > 0) {
+          allCases = allCases.concat(cases);
+          console.log(`  ✓ Fetched ${cases.length} cases (offset: ${offset}, total so far: ${allCases.length})`);
+          offset += limit;
+          hasMore = cases.length === limit;
+
+          // Add small delay between requests to respect rate limits
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } else {
+          hasMore = false;
+        }
+      } catch (err) {
+        console.error(`Error in pagination loop: ${err.message}`);
         break;
-      }
-
-      const cases = response.data?.data || response.data?.cases || response.data?.lawsuits || [];
-      if (Array.isArray(cases) && cases.length > 0) {
-        allCases = allCases.concat(cases);
-        console.log(`  ✓ Fetched ${cases.length} cases (offset: ${offset}, total so far: ${allCases.length})`);
-        offset += limit;
-        hasMore = cases.length === limit;
-      } else {
-        hasMore = false;
       }
     }
 
