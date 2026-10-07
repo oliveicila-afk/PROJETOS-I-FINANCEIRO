@@ -117,6 +117,7 @@ async function retrieveArchivedCases() {
         exit_execution_date: caseItem.exit_execution_date || 'N/A',
         fees_expec: caseItem.fees_expec || 0,
         fees_money: caseItem.fees_money || 0,
+        fee_percentage: caseItem.fee_percentage || caseItem.honorarios_percentual || 0,
         raw_details: caseItem
       });
 
@@ -213,6 +214,52 @@ function analyzePatterns(cases) {
       const percentage = ((count / cases.length) * 100).toFixed(1);
       console.log(`  • ${status}: ${count} cases (${percentage}%)`);
     });
+
+  // Pattern 5: Fee percentage analysis (% do escritório)
+  const feePercentages = cases
+    .map(c => parseFloat(c.fee_percentage) || 0)
+    .filter(v => v > 0)
+    .sort((a, b) => a - b);
+
+  if (feePercentages.length > 0) {
+    const sum = feePercentages.reduce((a, b) => a + b, 0);
+    const avg = sum / feePercentages.length;
+    const median = feePercentages[Math.floor(feePercentages.length / 2)];
+    const min = feePercentages[0];
+    const max = feePercentages[feePercentages.length - 1];
+
+    console.log('\n📌 Pattern 5 - Fee Percentage (% do Escritório) Analysis:');
+    console.log(`  • Average: ${avg.toFixed(1)}%`);
+    console.log(`  • Median: ${median.toFixed(1)}%`);
+    console.log(`  • Minimum: ${min.toFixed(1)}%`);
+    console.log(`  • Maximum: ${max.toFixed(1)}%`);
+    console.log(`  • Cases with fee percentage: ${feePercentages.length}/${cases.length} (${((feePercentages.length / cases.length) * 100).toFixed(1)}%)`);
+
+    // Distribution by percentage ranges
+    const ranges = {
+      '0-10%': 0,
+      '10-20%': 0,
+      '20-30%': 0,
+      '30-40%': 0,
+      '40%+': 0
+    };
+
+    feePercentages.forEach(pct => {
+      if (pct <= 10) ranges['0-10%']++;
+      else if (pct <= 20) ranges['10-20%']++;
+      else if (pct <= 30) ranges['20-30%']++;
+      else if (pct <= 40) ranges['30-40%']++;
+      else ranges['40%+']++;
+    });
+
+    console.log('\n  Distribution by percentage ranges:');
+    Object.entries(ranges).forEach(([range, count]) => {
+      if (count > 0) {
+        const pct = ((count / feePercentages.length) * 100).toFixed(1);
+        console.log(`    • ${range}: ${count} cases (${pct}%)`);
+      }
+    });
+  }
 
   console.log('\n✓ Pattern analysis complete!');
 }
