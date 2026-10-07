@@ -1,0 +1,42 @@
+name: Retrieve AdvBox Archived Cases
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *'  # Executa diariamente às 3 da manhã
+
+jobs:
+  retrieve-cases:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Run retrieve archived cases script
+        env:
+          ADVBOX_TOKEN: ${{ secrets.ADVBOX_TOKEN }}
+        run: |
+          node retrieve-archived-cases.js
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: archived-cases-results
+          path: /tmp/archived_cases_detailed.json
+          retention-days: 30
+
+      - name: Comment on job completion
+        if: always()
+        run: |
+          echo "✅ Execução concluída em $(date)"
+          if [ -f /tmp/archived_cases_detailed.json ]; then
+            echo "📊 Arquivo de resultados gerado com sucesso"
+            echo "Tamanho: $(du -h /tmp/archived_cases_detailed.json | cut -f1)"
+          fi
