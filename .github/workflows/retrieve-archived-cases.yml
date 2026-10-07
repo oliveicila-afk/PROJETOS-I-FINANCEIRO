@@ -22,6 +22,7 @@ jobs:
         env:
           ADVBOX_TOKEN: ${{ secrets.ADVBOX_TOKEN }}
         run: |
+          cd automacao-arquivamento-casos
           node retrieve-archived-cases.js
 
       - name: Upload results
