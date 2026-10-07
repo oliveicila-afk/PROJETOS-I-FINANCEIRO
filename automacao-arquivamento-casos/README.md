@@ -167,3 +167,26 @@ O sistema gera alertas para:
 ## 📞 Suporte
 
 Para dúvidas, contactar a equipe de desenvolvimento.
+
+## 📹 Análise de Workflow (Video Demonstration)
+
+### Workflow de Casos Contraturais
+
+Consulte a documentação completa do workflow demonstrado no vídeo:
+- **[WORKFLOW_ANALYSIS.md](./WORKFLOW_ANALYSIS.md)** - Análise frame-by-frame do video demonstration
+  - Sequência de 10 etapas visualizadas
+  - Gatilhos de automação identificados
+  - Campos críticos da API
+  - Checklist de validação
+
+### Perguntas Críticas para Implementação
+
+Antes de implementar, você precisará responder:
+- **[IMPLEMENTATION_QUESTIONS.md](./IMPLEMENTATION_QUESTIONS.md)** - 9 perguntas críticas
+  - Q1-Q2: Estrutura de dados (case type, fases)
+  - Q3-Q4: Tarefas e protocolos
+  - Q5-Q6: Integração Asaas e cross-reference
+  - Q7-Q9: Fluxo temporal e validações
+
+**Status**: ⏸️ Aguardando respostas às perguntas críticas para prosseguir com implementação.
+
