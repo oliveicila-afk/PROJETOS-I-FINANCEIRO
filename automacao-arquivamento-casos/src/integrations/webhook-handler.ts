@@ -9,6 +9,11 @@
  */
 
 import { ArchivingAutomationService } from '../domain/archiving-automation.js';
+import {
+  ArchivingAutomationWithAlerts,
+  getGlobalArchivingWithAlerts,
+  resetGlobalArchivingWithAlerts
+} from '../domain/archiving-automation-with-alerts.js';
 import { CaseType } from '../utils/case-type-detector.js';
 
 export interface WebhookPayload {
@@ -29,12 +34,25 @@ export interface WebhookResponse {
 }
 
 export class WebhookHandler {
-  private automationService: ArchivingAutomationService;
+  private automationWithAlerts: ArchivingAutomationWithAlerts;
   private logger: any;
   private webhookSecret: string;
 
   constructor() {
-    this.automationService = new ArchivingAutomationService();
+    // Initialize global instance with retry, slack, history, and alerting enabled
+    this.automationWithAlerts = getGlobalArchivingWithAlerts({
+      enableRetry: true,
+      retryConfig: {
+        maxRetries: parseInt(process.env.RETRY_MAX_ATTEMPTS || '3', 10),
+        initialDelayMs: parseInt(process.env.RETRY_INITIAL_DELAY_MS || '1000', 10),
+        maxDelayMs: parseInt(process.env.RETRY_MAX_DELAY_MS || '30000', 10),
+        backoffMultiplier: parseFloat(process.env.RETRY_BACKOFF_MULTIPLIER || '2'),
+      },
+      enableSlack: process.env.SLACK_WEBHOOK_URL ? true : false,
+      enableHistory: true,
+      enableAlerting: true,
+    });
+
     this.webhookSecret = process.env.WEBHOOK_SECRET || 'CHANGE_ME_IN_ENV';
     this.logger = {
       log: (msg: string) => console.log(`[WEBHOOK] ${msg}`),
@@ -143,8 +161,8 @@ export class WebhookHandler {
         }
       }
 
-      // 4. Disparar automação
-      await this.automationService.processArchivingCase({
+      // 4. Disparar automação com retry automático e alertas
+      const result = await this.automationWithAlerts.processArchivingCaseWithRetry({
         lawsuitId: lawsuit_id,
         processNumber: process_number,
         clientName: client_name,
@@ -152,14 +170,27 @@ export class WebhookHandler {
       });
 
       const duration = Date.now() - startTime;
-      this.logger.log(`✅ Case processed successfully in ${duration}ms`);
 
-      return {
-        success: true,
-        message: 'Case processed successfully',
-        case_id: lawsuit_id,
-        timestamp,
-      };
+      if (result) {
+        this.logger.log(
+          `✅ Case processed successfully in ${duration}ms | Protocol: ${result.protocol} | Task ID: ${result.entryId}`
+        );
+
+        return {
+          success: true,
+          message: 'Case processed successfully',
+          case_id: lawsuit_id,
+          timestamp,
+        };
+      } else {
+        this.logger.warn(`⚠️ Case processing returned null after ${duration}ms`);
+        return {
+          success: false,
+          message: 'Case processing failed',
+          timestamp,
+          error: 'Archiving task returned null',
+        };
+      }
     } catch (error) {
       const duration = Date.now() - startTime;
       this.logger.error(`Failed after ${duration}ms`, error);
@@ -176,11 +207,37 @@ export class WebhookHandler {
   /**
    * Testa conexão do webhook (GET /webhook/health)
    */
-  async healthCheck(): Promise<{ status: string; timestamp: string }> {
+  async healthCheck(): Promise<{ status: string; timestamp: string; stats?: any; criticalAlerts?: number }> {
+    const stats = this.automationWithAlerts.getStatistics();
+    const criticalAlerts = this.automationWithAlerts.getCriticalAlertCount();
+
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
+      stats,
+      criticalAlerts,
     };
+  }
+
+  /**
+   * Retorna histórico de processamentos
+   */
+  getHistory(): any {
+    return this.automationWithAlerts.getHistory();
+  }
+
+  /**
+   * Retorna estatísticas
+   */
+  getStatistics(): any {
+    return this.automationWithAlerts.getStatistics();
+  }
+
+  /**
+   * Retorna contagem de alertas críticos
+   */
+  getCriticalAlertCount(): number {
+    return this.automationWithAlerts.getCriticalAlertCount();
   }
 }
 

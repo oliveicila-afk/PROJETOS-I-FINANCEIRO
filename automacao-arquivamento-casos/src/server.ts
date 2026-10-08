@@ -103,6 +103,26 @@ export class WebhookServer {
       res.json(healthCheck);
     });
 
+    // Archiving history endpoint
+    this.app.get('/archiving/history', (req: Request, res: Response) => {
+      const history = this.webhookHandler.getHistory();
+      res.json({
+        timestamp: new Date().toISOString(),
+        history,
+      });
+    });
+
+    // Archiving statistics endpoint
+    this.app.get('/archiving/stats', (req: Request, res: Response) => {
+      const stats = this.webhookHandler.getStatistics();
+      const criticalAlerts = this.webhookHandler.getCriticalAlertCount();
+      res.json({
+        timestamp: new Date().toISOString(),
+        statistics: stats,
+        criticalAlerts,
+      });
+    });
+
     // 404 handler
     this.app.use((req: Request, res: Response) => {
       res.status(404).json({
@@ -127,7 +147,9 @@ export class WebhookServer {
         console.log(`\n🚀 Webhook Server is running on port ${this.port}`);
         console.log(`📍 POST  http://localhost:${this.port}/webhook`);
         console.log(`❤️  GET   http://localhost:${this.port}/health`);
-        console.log(`📡 GET   http://localhost:${this.port}/webhook/health\n`);
+        console.log(`📡 GET   http://localhost:${this.port}/webhook/health`);
+        console.log(`📊 GET   http://localhost:${this.port}/archiving/history`);
+        console.log(`📈 GET   http://localhost:${this.port}/archiving/stats\n`);
 
         resolve();
       });
