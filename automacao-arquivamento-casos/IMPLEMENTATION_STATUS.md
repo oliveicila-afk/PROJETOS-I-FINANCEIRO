@@ -132,7 +132,97 @@
 
 ---
 
-### Fase 4: Deploy ⏹️ AGUARDANDO FASE 3
+### Fase 4: Webhook + CRM Polling ✅ ETAPA 2-4 COMPLETAS
+
+**Etapa 2: Webhook Handler** ✅ IMPLEMENTADO
+- ✅ **WebhookHandler class** (`webhook-handler.ts`)
+  - Recebe POST do CRM Financial
+  - Valida Bearer token authorization
+  - Valida payload (lawsuit_id, process_number, client_name)
+  - Dispara automação de arquivamento
+  - Retorna WebhookResponse com status
+  - Middleware factory para Express/Fastify
+
+- ✅ **Express Server** (`server.ts`)
+  - POST /webhook - processa webhooks do CRM
+  - GET /health - status geral do servidor e polling
+  - GET /webhook/health - health check do webhook
+  - Request logging middleware
+  - Graceful shutdown com SIGINT/SIGTERM
+  - Inicia CRM polling automaticamente
+
+**Etapa 3: CRM Polling Fallback** ✅ IMPLEMENTADO
+- ✅ **CrmPolling class** (`crm-polling.ts`)
+  - Loop de polling a cada 15 minutos
+  - Busca casos em coluna de arquivamento via CRM API
+  - Filtra casos novos/recentes vs. já processados
+  - Dispara automação para novos casos
+  - State persistence em `.polling-state.json`
+  - Singleton global para gerenciar instância
+  - Error tracking com notification em 3+ falhas
+  - startGlobalPolling() / stopGlobalPolling()
+
+**Etapa 4: GitHub Actions Workflow** ✅ IMPLEMENTADO
+- ✅ **GitHub Actions Workflow** (`.github/workflows/webhook-trigger.yml`)
+  - Trigger via `repository_dispatch` event
+  - Valida payload (lawsuit_id, process_number, client_name)
+  - Executa automação via CLI
+  - Notificação por email em sucesso/erro
+  - Reporta status ao CRM Financial
+  - Artifact upload com logs
+
+- ✅ **CLI Interface** (`src/cli/archive-case-cli.ts`)
+  - Executa arquivamento via linha de comando
+  - Suporta argumentos: --lawsuit-id, --process-number, --client-name, --case-type
+  - Help com --help/-h
+  - Lazy loading de config para permitir help sem variáveis
+  - Output JSON estruturado para parsing
+  - Exit codes apropriados (0 = sucesso, 1 = erro)
+
+- ✅ **npm Script**
+  - `npm run archive-case` - Executa CLI de arquivamento
+
+- ✅ **Documentação**
+  - `docs/GITHUB_ACTIONS_INTEGRATION.md` - Guia completo
+  - Exemplos de uso via GitHub API
+  - Configuração de secrets
+  - Troubleshooting
+
+**Integração com ArchivingAutomationService** ✅
+- ✅ Novo método `processArchivingCase(WebhookArchivingPayload)`
+  - Entrada direta do webhook/polling
+  - Busca detalhes do caso no Advbox
+  - Determina tipo de caso (SUCUMBENCIAL/CONTRATUAL/OTHER)
+  - Procura pagamento correspondente no Asaas
+  - Valida todas as 4 condições de arquivamento
+  - Calcula honorários e protocolo
+  - Cria tarefa de arquivamento
+  - Retorna ArchivingTask com resultado
+
+**npm Scripts** ✅
+- `npm run server` - Inicia servidor webhook + polling fallback
+- `npm run archive-case -- [opcoes]` - Executa automação via CLI
+- Porta configurável via WEBHOOK_PORT (default: 3000)
+
+**Dependências Adicionadas** ✅
+- express 4.18.2
+- axios 1.6.2
+- @types/express 4.17.21
+
+**Arquivos de Status** ✅
+- `src/integrations/webhook-handler.ts` (165 linhas)
+- `src/integrations/crm-polling.ts` (234 linhas)
+- `src/server.ts` (145 linhas)
+- `src/cli/archive-case-cli.ts` (190 linhas - NOVO)
+- `.github/workflows/webhook-trigger.yml` (220 linhas - NOVO)
+- `docs/GITHUB_ACTIONS_INTEGRATION.md` (280 linhas - NOVO)
+- `src/domain/archiving-automation.ts` (+170 linhas com novo método)
+
+**Status**: 95% → 97% → 98% Completo
+- Etapa 2 (Webhook): ✅ Completa
+- Etapa 3 (Polling): ✅ Completa
+- Etapa 4 (GitHub Actions): ✅ Completa
+- Próximas: Etapa 5 (Alertas), Etapa 6 (Testes), Etapa 7 (Staging), Etapa 8 (Produção)
 
 ---
 

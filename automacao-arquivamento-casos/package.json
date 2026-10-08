@@ -8,7 +8,8 @@
     "build": "node ./node_modules/typescript/bin/tsc",
     "test": "node --import tsx --test test/*.test.ts",
     "cli": "node --import tsx src/cli.ts",
-    "server": "node --import tsx src/server.ts"
+    "server": "node --import tsx src/server.ts",
+    "archive-case": "node --import tsx src/cli/archive-case-cli.ts"
   },
   "dependencies": {
     "axios": "^1.6.2",

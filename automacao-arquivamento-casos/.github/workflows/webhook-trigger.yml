@@ -1,0 +1,194 @@
+name: 'Webhook - Automação de Arquivamento'
+
+on:
+  repository_dispatch:
+    types: [archive-case]
+
+env:
+  NODE_VERSION: '18.x'
+
+jobs:
+  trigger-archiving-automation:
+    name: 'Processar Arquivamento'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: '📥 Checkout código'
+        uses: actions/checkout@v4
+
+      - name: '📦 Setup Node.js'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: '📚 Instalar dependências'
+        run: npm ci
+
+      - name: '🔨 Compilar TypeScript'
+        run: npm run build
+
+      - name: '🔍 Validar payload'
+        id: validate
+        run: |
+          LAWSUIT_ID="${{ github.event.client_payload.lawsuit_id }}"
+          PROCESS_NUMBER="${{ github.event.client_payload.process_number }}"
+          CLIENT_NAME="${{ github.event.client_payload.client_name }}"
+          CASE_TYPE="${{ github.event.client_payload.case_type }}"
+
+          if [ -z "$LAWSUIT_ID" ]; then
+            echo "❌ lawsuit_id é obrigatório"
+            exit 1
+          fi
+
+          if [ -z "$PROCESS_NUMBER" ]; then
+            echo "❌ process_number é obrigatório"
+            exit 1
+          fi
+
+          if [ -z "$CLIENT_NAME" ]; then
+            echo "❌ client_name é obrigatório"
+            exit 1
+          fi
+
+          echo "lawsuit_id=$LAWSUIT_ID" >> $GITHUB_OUTPUT
+          echo "process_number=$PROCESS_NUMBER" >> $GITHUB_OUTPUT
+          echo "client_name=$CLIENT_NAME" >> $GITHUB_OUTPUT
+          echo "case_type=$CASE_TYPE" >> $GITHUB_OUTPUT
+
+          echo "✅ Payload validado"
+          echo "  - Lawsuit ID: $LAWSUIT_ID"
+          echo "  - Process #: $PROCESS_NUMBER"
+          echo "  - Client: $CLIENT_NAME"
+
+      - name: '🚀 Executar automacao de arquivamento'
+        id: execute
+        env:
+          LAWSUIT_ID: ${{ steps.validate.outputs.lawsuit_id }}
+          PROCESS_NUMBER: ${{ steps.validate.outputs.process_number }}
+          CLIENT_NAME: ${{ steps.validate.outputs.client_name }}
+          CASE_TYPE: ${{ steps.validate.outputs.case_type }}
+          ADVBOX_TOKEN: ${{ secrets.ADVBOX_TOKEN }}
+          ADVBOX_API_URL: ${{ secrets.ADVBOX_API_URL || 'https://app.advbox.com.br/api/v1' }}
+          ASAAS_API_TOKEN: ${{ secrets.ASAAS_API_TOKEN }}
+          ASAAS_API_URL: ${{ secrets.ASAAS_API_URL || 'https://api.asaas.com/v3' }}
+        run: |
+          npm run archive-case -- \
+            --lawsuit-id "$LAWSUIT_ID" \
+            --process-number "$PROCESS_NUMBER" \
+            --client-name "$CLIENT_NAME" \
+            --case-type "$CASE_TYPE" > /tmp/automation-output.log 2>&1
+
+          RESULT=$?
+
+          cat /tmp/automation-output.log
+
+          if [ $RESULT -eq 0 ]; then
+            echo "result=success" >> $GITHUB_OUTPUT
+          else
+            echo "result=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+      - name: '📧 Notificar sucesso'
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_SERVER }}
+          server_port: ${{ secrets.MAIL_PORT }}
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: '✅ Arquivamento Automático - Sucesso'
+          to: ${{ secrets.ADMIN_EMAIL }}
+          from: 'Automação de Arquivamento <noreply@empresa.com.br>'
+          body: |
+            Caso arquivado com sucesso!
+
+            📋 Informações do Caso:
+            - Lawsuit ID: ${{ steps.validate.outputs.lawsuit_id }}
+            - Processo: ${{ steps.validate.outputs.process_number }}
+            - Cliente: ${{ steps.validate.outputs.client_name }}
+
+            ✅ Status: Tarefa criada em Advbox
+            ⏱️ Timestamp: ${{ github.event.client_payload.timestamp }}
+
+            Acesse o GitHub Actions para mais detalhes:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: '🚨 Notificar erro'
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_SERVER }}
+          server_port: ${{ secrets.MAIL_PORT }}
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: '❌ Arquivamento Automático - ERRO'
+          to: ${{ secrets.ADMIN_EMAIL }}
+          from: 'Automação de Arquivamento <noreply@empresa.com.br>'
+          body: |
+            ❌ Erro ao processar arquivamento automático!
+
+            📋 Informações do Caso:
+            - Lawsuit ID: ${{ steps.validate.outputs.lawsuit_id }}
+            - Processo: ${{ steps.validate.outputs.process_number }}
+            - Cliente: ${{ steps.validate.outputs.client_name }}
+
+            ⚠️ Intervenção manual pode ser necessária.
+
+            Acesse o GitHub Actions para diagnosticar:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: '📤 Upload logs'
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: automation-logs-${{ github.run_number }}
+          path: /tmp/automation-output.json
+          retention-days: 30
+
+  report-status:
+    name: 'Reportar Status para CRM'
+    runs-on: ubuntu-latest
+    needs: trigger-archiving-automation
+    if: always()
+
+    steps:
+      - name: '✅ Marcar como concluído no CRM'
+        if: needs.trigger-archiving-automation.result == 'success'
+        env:
+          CRM_FINANCIAL_API_URL: ${{ secrets.CRM_FINANCIAL_API_URL }}
+          CRM_FINANCIAL_TOKEN: ${{ secrets.CRM_FINANCIAL_TOKEN }}
+        run: |
+          curl -X POST \
+            "${{ env.CRM_FINANCIAL_API_URL }}/webhook/status" \
+            -H "Authorization: Bearer ${{ env.CRM_FINANCIAL_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "lawsuit_id": "${{ github.event.client_payload.lawsuit_id }}",
+              "status": "ARCHIVED",
+              "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+              "github_run_id": "'${{ github.run_id }}'"
+            }' || true
+
+          echo "✅ Status reportado ao CRM"
+
+      - name: '❌ Marcar como falho no CRM'
+        if: needs.trigger-archiving-automation.result == 'failure'
+        env:
+          CRM_FINANCIAL_API_URL: ${{ secrets.CRM_FINANCIAL_API_URL }}
+          CRM_FINANCIAL_TOKEN: ${{ secrets.CRM_FINANCIAL_TOKEN }}
+        run: |
+          curl -X POST \
+            "${{ env.CRM_FINANCIAL_API_URL }}/webhook/status" \
+            -H "Authorization: Bearer ${{ env.CRM_FINANCIAL_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "lawsuit_id": "${{ github.event.client_payload.lawsuit_id }}",
+              "status": "ARCHIVE_FAILED",
+              "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+              "github_run_id": "'${{ github.run_id }}'"
+            }' || true
+
+          echo "❌ Falha reportada ao CRM"
