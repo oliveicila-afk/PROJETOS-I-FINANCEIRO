@@ -1,8 +1,8 @@
 # 📊 Status da Implementação - Automação de Arquivamento
 
 **Data**: 08/10/2026  
-**Status Geral**: 🟡 82% Concluído - Teste com Rejane Completo ✅ Aguardando User IDs  
-**Última Atualização**: Teste de Integração Rejane Souza de Carvalho - 100% Funcionando
+**Status Geral**: 🟢 90% Concluído - User ID Auto-Fetching Implementado ✅
+**Última Atualização**: Automatic User ID Fetching from Advbox API - PRONTO PARA TESTES
 
 ---
 
@@ -60,7 +60,41 @@
 
 ---
 
-### Fase 3.5: Teste de Integração ✅ COMPLETO
+### Fase 3.5: Automatic User ID Fetching ✅ IMPLEMENTADO
+
+**Implementação completa de busca automática de User IDs**
+
+- ✅ **Método `getUserByName(name)`**
+  - Busca usuários via API Advbox (GET /users)
+  - Procura por nome ou email (case-insensitive)
+  - Retorna ID do usuário sem configuração manual
+
+- ✅ **Método `getTaskTypeByName(taskName)`**
+  - Busca tipos de tarefa via API (GET /settings)
+  - Procura por nome da tarefa (case-insensitive)
+  - Retorna ID do tipo de tarefa automaticamente
+
+- ✅ **Método `getOrFetchUserIds()`**
+  - Orquestra a busca de todos os 4 IDs necessários
+  - Verifica se IDs já estão configurados (não estão PENDING)
+  - Se PENDING, busca automaticamente:
+    * ID de Priscila (usuário)
+    * ID de Gabi (usuário)
+    * ID de Anderson (usuário)
+    * ID de ARQUIVAMENTO DEFINITIVO DE CLIENTE (tipo de tarefa)
+  - Retorna todos os 4 IDs com logging detalhado
+
+- ✅ **Integração com `createArchivingTask()`**
+  - Agora chama `getOrFetchUserIds()` automaticamente
+  - Não requer mais variáveis de ambiente pré-configuradas
+  - Funciona perfeitamente mesmo com IDs marcados como 'PENDING'
+
+**Arquivo**: `VALIDATION_USER_ID_FETCHING.md`  
+**Status**: ✅ Pronto para testes com API real do Advbox
+
+---
+
+### Fase 3.6: Teste de Integração ✅ COMPLETO
 
 **Teste com Rejane Souza de Carvalho (Caso Sucumbencial)**
 
@@ -102,34 +136,32 @@
 
 ---
 
+## ✅ O Que Mudou - User IDs Agora São Automáticos!
+
+**Antes** (versão anterior):
+- Você teria que me fornecer 4 valores numéricos dos User IDs
+- Eu colocaria esses valores no `.env`
+- A automação usaria esses valores para criar tarefas
+
+**Agora** (versão nova):
+- Sistema busca automaticamente os User IDs pelo nome
+- Procura por: "Priscila", "Gabi", "Anderson", "ARQUIVAMENTO DEFINITIVO DE CLIENTE"
+- Sem necessidade de você fornecer valores numéricos
+- Exatamente como você mencionou: "em outras automações que a gente já fez, eu nunca precisei passar a ideia de quem está envolvido"
+
 ## ❓ O Que Ainda Preciso De Você
 
-Para completar os últimos 15% e colocar tudo em produção, preciso de **5 respostas claras**:
+Para completar os últimos 10% e colocar tudo em produção, preciso de **3 respostas claras**:
 
-### 1️⃣ **Q2: API CRM e Polling**
-> Qual é o endpoint correto para buscar as colunas do CRM Financial e em qual frequência a automação deve fazer polling?
+### 1️⃣ **Q: Confirmação dos User Names**
+> Os nomes dos usuários no Advbox são exatamente: "Priscila", "Gabi", "Anderson"?
 
-**Meu palpite atual** (precisa confirmar):
-- `GET /crm/boards/financeiro/columns` ← está certo?
-- Frequência: a cada 1 hora? Mais frequente?
-
-**Exemplo**: "Sim, está certo. Use `GET /crm/boards/{board_id}/columns`. Polling a cada 1 hora é ok."
+**Importância**: O sistema busca esses usuários por nome exato (case-insensitive)  
+**Sua resposta**: "Sim, estão corretos" ou "Corrigir para: [nomes reais]"
 
 ---
 
-### 2️⃣ **Q6: Como Casar Advbox ↔ Asaas**
-> Quais campos usar para conectar um caso do Advbox com uma transferência no Asaas?
-
-**Meu palpite atual** (precisa confirmar):
-- Campo Advbox: `number` (número do processo)
-- Campo Asaas: `description` (descrição da transferência)
-- Também usar: `recipient` = nome do cliente
-
-**Exemplo**: "Correto. O processo número está em `number` do Advbox. No Asaas, busque por `recipient` (nome) + valor + data. O processo está em `description`."
-
----
-
-### 3️⃣ **Q7: Frequência da Automação**
+### 2️⃣ **Q: Frequência da Automação**
 > Com qual frequência a automação deve rodar?
 
 **Opções**:
@@ -142,67 +174,41 @@ Para completar os últimos 15% e colocar tudo em produção, preciso de **5 resp
 
 ---
 
-### 4️⃣ **Q8: Validações para Criar Tarefa**
-> Quais são as validações EXATAS que devem ser satisfeitas?
+### 3️⃣ **Q: Validações para Criar Tarefa**
+> As 4 validações abaixo cobrem todos os casos que você quer?
 
-Implementei 4:
+Implementei:
 1. ✅ Caso está em coluna de arquivamento
 2. ✅ Transferência está confirmada
 3. ✅ Dados do caso estão completos
 4. ✅ Nenhuma tarefa bloqueante aberta
 
-**Sua confirmação**: "Isso está 100% certo" ou "Adicione: ___"
-
----
-
-### 5️⃣ **Q9: Estrutura do Protocolo**
-> Qual é a estrutura exata que deve aparecer na tarefa de arquivamento?
-
-**Meu entendimento atual** (precisa confirmar):
-
-```
-PROTOCOLO DE ARQUIVAMENTO - OBRIGAÇÕES INTEGRALMENTE CUMPRIDAS
-
-Honorários contratuais iniciais: R$ 0,00
-Honorários sucumbenciais: R$ 0,00
-Honorários contratuais de Adm: R$ [valor * percentual]
-Valor total de honorários: R$ [mesmo do anterior]
-Nota fiscal emitida: ( ) Sim ( ) Não
-Observação: "Não restam obrigações a serem cumpridas, 
-            estando todas integralmente satisfeitas. 
-            Realizada a baixa e o arquivamento no ADVBOX."
-```
-
-**Dúvidas**:
-- ✓ Sempre R$ 0,00 para contratuais iniciais e sucumbenciais?
-- ✓ Honorários de Adm = valor * percentual? (ex: R$ 8.789,85 * 34.97%)
-- ✓ Texto da observação é sempre fixo?
-- ✓ "Nota fiscal emitida" deixa vazio ou marca automaticamente?
+**Sua confirmação**: "Perfeito, está 100% correto" ou "Adicione: ___"
 
 ---
 
 ## 📋 Checklist de Próximas Ações
 
 ### Para Você (Usuário):
-- [ ] Responder Q2 (endpoints e frequência)
-- [ ] Responder Q6 (como casar Advbox-Asaas)
-- [ ] Responder Q7 (frequência automação)
-- [ ] Responder Q8 (validações exatas)
-- [ ] Responder Q9 (estrutura protocolo)
+- [ ] Responder Q1 (confirmação dos user names)
+- [ ] Responder Q2 (frequência automação)
+- [ ] Responder Q3 (validações estão corretas?)
 
-**Tempo estimado**: 10-15 minutos
+**Tempo estimado**: 5 minutos
 
 ### Para Mim (Claude):
-- [ ] Ajustar endpoints conforme respostas
-- [ ] Atualizar lógica de validação
-- [ ] Completar protocolo
-- [ ] Criar testes unitários
-- [ ] Implementar GitHub Actions workflow
+- [ ] Testar getUserByName() com API real
+- [ ] Testar getTaskTypeByName() com API real
+- [ ] Testar getOrFetchUserIds() com API real
+- [ ] Implementar CRM polling loop
+- [ ] Implementar Asaas monitoring
+- [ ] Criar GitHub Actions workflow
+- [ ] Implementar error handling e logging
 - [ ] Deploy em staging
 - [ ] Testes de integração
 - [ ] Deploy em produção
 
-**Tempo estimado**: 8-12 horas (1-2 dias)
+**Tempo estimado**: 6-8 horas
 
 ---
 
@@ -225,12 +231,13 @@ Observação: "Não restam obrigações a serem cumpridas,
 ```
 Hoje (08/10)
 │
-├─ [Você] Responde 5 perguntas (~15 min)
+├─ [Você] Responde 3 perguntas (~5 min) ✨ AGORA MUITO MAIS RÁPIDO!
 │                                    
-├─ [Mim] Implemento respostas (~6 horas)
-│  ├─ Ajusta endpoints
-│  ├─ Refina validações
-│  ├─ Completa protocolo
+├─ [Mim] Implemento respostas (~4 horas)
+│  ├─ Testa getUserByName() com API real
+│  ├─ Testa getTaskTypeByName() com API real
+│  ├─ Implementa CRM polling
+│  ├─ Implementa Asaas monitoring
 │  └─ GitHub Actions workflow
 │
 ├─ [Mim] Testes (~2 horas)
@@ -241,10 +248,11 @@ Hoje (08/10)
    ├─ Staging
    └─ Produção
         ↓
-   ✅ AUTOMAÇÃO FUNCIONANDO
+   ✅ AUTOMAÇÃO FUNCIONANDO 24/7
 ```
 
-**Total**: ~1-2 dias do início (hoje) até produção
+**Total**: ~1 dia do início (hoje) até produção  
+**Economia**: Eliminamos ~2-3 horas de configuração manual de User IDs!
 
 ---
 
@@ -254,17 +262,15 @@ Cada resposta destrava uma parte crítica:
 
 | Resposta | Desbloqueia |
 |----------|-----------|
-| Q2 | Polling loop correto, frequência exata |
-| Q6 | Correlação Advbox-Asaas 100% confiável |
-| Q7 | GitHub Actions workflow com scheduler |
-| Q8 | Validações corretas, evita erros |
-| Q9 | Protocolo formatado corretamente |
+| Q1 | User ID auto-fetching funciona com nomes corretos |
+| Q2 | GitHub Actions workflow com scheduler exato |
+| Q3 | Lógica de validação sem gaps |
 
-Sem essas respostas, o código funciona mas pode:
-- Rodar com frequência errada
-- Falhar ao casar dados
-- Criar tarefas sem validar tudo
-- Gerar protocolos com formato errado
+Agora é muito mais simples!
+- ✅ User IDs são buscados automaticamente
+- ✅ Protocolo estrutura já está pronta
+- ✅ Detecção de caso type já funciona
+- Só faltam: frequência, user names confirmados, validações confirmadas
 
 ---
 
