@@ -46,3 +46,9 @@ export function getAsaasConfig(): AsaasConfig {
     apiKey,
   };
 }
+
+// Export combined config object for convenience
+export const config = {
+  advbox: getAdvBoxConfig(),
+  asaas: getAsaasConfig(),
+};

@@ -1,148 +1,156 @@
 /**
- * Archiving Automation Service
+ * Archiving Automation Service - REFACTORED
  *
- * Main orchestration service that:
- * 1. Monitors CRM Financial board for cases ready for archiving
- * 2. Detects corresponding transfers in Asaas
- * 3. Validates all conditions are met
- * 4. Creates archiving task with protocol in Advbox
+ * New flow (Asaas-driven):
+ * 1. Monitor Asaas for incoming payments (entries) with process number
+ * 2. For each entry:
+ *    a. Get case details from Advbox using process number
+ *    b. Determine if sucumbencial or contratual
+ *    c. If sucumbencial: Archive immediately (with 4 validations)
+ *    d. If contratual/other: Store info and wait for outgoing transfer (repasse) to client
+ *       - When transfer found: Archive (with 4 validations)
  */
 
 import { AdvboxClient } from '../integrations/advbox-client.js';
-import { CRMClient, CRMCase } from '../integrations/crm-client.js';
-import { AsaasClient } from '../integrations/asaas-client.js';
+import { AsaasClient, AsaasEntry, AsaasTransfer } from '../integrations/asaas-client.js';
 import { config } from '../config.js';
 
 export interface ArchivingValidation {
   isValid: boolean;
   checks: {
-    crmStatusReady: boolean;
-    transferConfirmed: boolean;
-    caseDataComplete: boolean;
-    noActiveTasksBlocking: boolean;
+    entryConfirmed: boolean;        // Entry is confirmed in Asaas
+    caseDataComplete: boolean;      // Case has process number, client name, and type
+    noActiveTasksBlocking: boolean; // No blocking tasks in Advbox
+    transferConfirmedIfNeeded: boolean; // If contratual, transfer must be confirmed
   };
   errors: string[];
   warnings: string[];
 }
 
 export interface ArchivingTask {
-  caseId: string;
+  entryId: string;
   processNumber: string;
   clientName: string;
-  value: number;
-  transferAmount: number;
+  caseType: 'SUCUMBENCIAL' | 'CONTRATUAL' | 'OTHER';
+  entryValue: number;
+  transferValue?: number;
   honorariesFees: number;
-  repasse: number;
+  repasse?: number;
   protocol: string;
   readyForExecution: boolean;
+  createdAt: string;
+}
+
+export interface PendingArchiving {
+  entryId: string;
+  processNumber: string;
+  clientName: string;
+  caseType: string;
+  entryValue: number;
+  createdAt: string;
+  awaitingTransferUntil: string;
 }
 
 export class ArchivingAutomationService {
   private advboxClient: AdvboxClient;
-  private crmClient: CRMClient;
   private asaasClient: AsaasClient;
+  private pendingArchivings: Map<string, PendingArchiving> = new Map();
 
   constructor() {
     this.advboxClient = new AdvboxClient();
-    this.crmClient = new CRMClient();
     this.asaasClient = new AsaasClient();
   }
 
   /**
-   * Main automation loop:
-   * 1. Get cases from "Para Arquivamento" or "Pagamento Realizado" in CRM
-   * 2. For each case, verify transfer in Asaas
-   * 3. Validate all conditions
-   * 4. Create archiving task if ready
+   * Main automation loop - REFACTORED
+   * 1. Scan Asaas entries (incoming payments) from the last X hours/minutes
+   * 2. For each entry with process number:
+   *    - Get case details from Advbox
+   *    - Determine case type (sucumbencial vs contratual)
+   *    - If sucumbencial: Archive immediately
+   *    - If contratual: Store and wait for transfer
+   * 3. For pending contratual cases, check for matching transfers
+   * 4. When transfer found: Archive the case
    */
   async processArchivingCandidates(): Promise<ArchivingTask[]> {
-    console.log('[Archiving Automation] Starting archiving process...');
+    console.log('[Archiving Automation] Starting refactored archiving process (Asaas-driven)...');
 
     try {
-      // Step 1: Get candidates from CRM
-      const crmCases = await this.crmClient.getCasesReadyForArchiving();
-      console.log(`[Archiving Automation] Found ${crmCases.length} candidates in CRM`);
-
       const completedTasks: ArchivingTask[] = [];
 
-      for (const crmCase of crmCases) {
+      // Step 1: Scan recent entries from Asaas
+      const entries = await this.asaasClient.searchEntries({
+        status: 'CONFIRMED',
+        limit: 50,
+      });
+
+      console.log(`[Archiving Automation] Found ${entries.length} confirmed entries in Asaas`);
+
+      // Step 2: Process each entry
+      for (const entry of entries) {
         try {
-          // Step 2: Get full case details from Advbox lawsuits API
-          const caseDetails = await this.advboxClient.getLawsuit(crmCase.id);
+          // Extract process number from description
+          const processNumber = this.extractProcessNumber(entry.description);
+
+          if (!processNumber) {
+            console.log(`[Archiving Automation] Entry ${entry.id} has no process number, skipping`);
+            continue;
+          }
+
+          console.log(`[Archiving Automation] Processing entry ${entry.id} with process ${processNumber}`);
+
+          // Get case details from Advbox
+          const caseDetails = await this.advboxClient.getLawsuitByNumber(processNumber);
           if (!caseDetails) {
-            console.warn(`[Archiving Automation] Could not find lawsuit details for case ${crmCase.id}`);
+            console.warn(
+              `[Archiving Automation] Could not find case details for process ${processNumber}`
+            );
             continue;
           }
 
-          // Step 3: Extract process number and client info
-          const processNumber = caseDetails.number || crmCase.process_number;
-          const clientName = caseDetails.plaintiff_name || caseDetails.defendant_name || crmCase.client_name;
+          // Extract case info
+          const clientName = caseDetails.plaintiff_name || caseDetails.defendant_name || 'Unknown';
+          const caseType = this.determineCaseType(caseDetails);
 
-          if (!processNumber || !clientName) {
-            console.warn(`[Archiving Automation] Missing process number or client name for case ${crmCase.id}`);
-            continue;
-          }
-
-          // Step 4: Find corresponding transfer in Asaas using process number + client name
-          const transfers = await this.asaasClient.searchTransfers({
-            clientName,
-            processNumber,
-            status: 'COMPLETED',
-          });
-
-          if (transfers.length === 0) {
-            console.log(`[Archiving Automation] No confirmed transfer found for case ${crmCase.id}`);
-            continue;
-          }
-
-          // Use most recent transfer
-          const transfer = transfers[0];
-
-          // Step 5: Validate all conditions
-          const validation = await this.validateArchivingConditions(
-            crmCase,
-            caseDetails,
-            transfer
+          console.log(
+            `[Archiving Automation] Case ${processNumber} is type: ${caseType}, client: ${clientName}`
           );
 
-          if (!validation.isValid) {
-            console.warn(`[Archiving Automation] Validation failed for case ${crmCase.id}:`, validation.errors);
-            continue;
-          }
+          // Step 3: Route based on case type
+          if (caseType === 'SUCUMBENCIAL') {
+            // SUCUMBENCIAL: Archive immediately
+            console.log(`[Archiving Automation] Case ${processNumber} is sucumbencial, archiving immediately`);
 
-          // Step 6: Calculate fees and protocol
-          const feesInfo = await this.calculateFeesAndProtocol(caseDetails, transfer);
-
-          // Step 7: Create archiving task
-          const taskCreated = await this.createArchivingTask(
-            crmCase.id,
-            processNumber,
-            clientName,
-            caseDetails,
-            transfer,
-            feesInfo
-          );
-
-          if (taskCreated) {
-            completedTasks.push({
-              caseId: crmCase.id,
+            const task = await this.archiveCase(
+              entry.id,
               processNumber,
               clientName,
-              value: transfer.value,
-              transferAmount: transfer.value,
-              honorariesFees: feesInfo.totalHonoraries,
-              repasse: feesInfo.repasse,
-              protocol: feesInfo.protocol,
-              readyForExecution: true,
-            });
+              caseDetails,
+              entry,
+              null, // No transfer for sucumbencial
+              caseType
+            );
 
-            console.log(`[Archiving Automation] ✅ Successfully created archiving task for case ${crmCase.id}`);
+            if (task) {
+              completedTasks.push(task);
+            }
+          } else {
+            // CONTRATUAL or OTHER: Store and wait for transfer to client
+            console.log(
+              `[Archiving Automation] Case ${processNumber} is ${caseType}, waiting for transfer to client`
+            );
+
+            this.storePendingArchiving(entry, processNumber, clientName, caseType);
           }
         } catch (error) {
-          console.error(`[Archiving Automation] Error processing case ${crmCase.id}:`, error);
+          console.error(`[Archiving Automation] Error processing entry ${entry.id}:`, error);
           continue;
         }
       }
+
+      // Step 4: Check pending cases for matching transfers
+      const archiveFromPending = await this.processePendingArchivings();
+      completedTasks.push(...archiveFromPending);
 
       console.log(`[Archiving Automation] Completed ${completedTasks.length} archiving tasks`);
       return completedTasks;
@@ -153,51 +161,248 @@ export class ArchivingAutomationService {
   }
 
   /**
-   * Validate that all conditions are met before creating archiving task
+   * Extract process number from Asaas entry description
+   * Format: "PROCESSO 0052754-30.2026.8.04.1000" or similar
+   */
+  private extractProcessNumber(description: string): string | null {
+    if (!description) return null;
+
+    // Match patterns: "PROCESSO NNNNNNNN-NN.NNNN.N.NN.NNNN" or numbers with dashes
+    const match = description.match(/(\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4})/);
+    return match?.[1] || null;
+  }
+
+  /**
+   * Determine case type from Advbox case details
+   * Sucumbencial: only office fees (no client repayment)
+   * Contratual: office takes percentage, rest goes to client
+   * Other: default
+   */
+  private determineCaseType(caseDetails: any): 'SUCUMBENCIAL' | 'CONTRATUAL' | 'OTHER' {
+    // Check for case type field in Advbox
+    if (caseDetails.case_type) {
+      const type = String(caseDetails.case_type).toLowerCase();
+      if (type.includes('sucumbencial') || type.includes('sentença')) {
+        return 'SUCUMBENCIAL';
+      }
+      if (type.includes('contrato') || type.includes('contractual')) {
+        return 'CONTRATUAL';
+      }
+    }
+
+    // Check for fee percentage (contratual cases have percentage)
+    const hasPercentage = this.extractFeePercentage(caseDetails) > 0;
+    if (hasPercentage) {
+      return 'CONTRATUAL';
+    }
+
+    // Default
+    return 'OTHER';
+  }
+
+  /**
+   * Store pending archiving case (waiting for transfer)
+   */
+  private storePendingArchiving(
+    entry: AsaasEntry,
+    processNumber: string,
+    clientName: string,
+    caseType: string
+  ): void {
+    const key = `${processNumber}:${entry.id}`;
+
+    // Calculate expiration (wait up to 7 days for transfer)
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    this.pendingArchivings.set(key, {
+      entryId: entry.id,
+      processNumber,
+      clientName,
+      caseType,
+      entryValue: entry.value,
+      createdAt: entry.createdAt,
+      awaitingTransferUntil: expiresAt.toISOString(),
+    });
+
+    console.log(
+      `[Archiving Automation] Stored pending archiving for ${processNumber}, waiting until ${expiresAt.toISOString()}`
+    );
+  }
+
+  /**
+   * Process pending archivings - check for matching transfers
+   */
+  private async processePendingArchivings(): Promise<ArchivingTask[]> {
+    const completedTasks: ArchivingTask[] = [];
+
+    for (const [key, pending] of this.pendingArchivings.entries()) {
+      try {
+        // Check if transfer has been made to this client
+        const transfers = await this.asaasClient.searchTransfers({
+          clientName: pending.clientName,
+          processNumber: pending.processNumber,
+          status: 'COMPLETED',
+        });
+
+        if (transfers.length > 0) {
+          const transfer = transfers[0]; // Use most recent
+          console.log(
+            `[Archiving Automation] Found matching transfer for ${pending.processNumber}, archiving now`
+          );
+
+          // Get case details again for archiving
+          const caseDetails = await this.advboxClient.getLawsuitByNumber(pending.processNumber);
+          if (caseDetails) {
+            // Create Asaas entry object for compatibility
+            const entry: AsaasEntry = {
+              id: pending.entryId,
+              value: pending.entryValue,
+              description: `PROCESSO ${pending.processNumber}`,
+              status: 'CONFIRMED',
+              createdAt: pending.createdAt,
+              customerName: pending.clientName,
+            };
+
+            const task = await this.archiveCase(
+              pending.entryId,
+              pending.processNumber,
+              pending.clientName,
+              caseDetails,
+              entry,
+              transfer,
+              pending.caseType
+            );
+
+            if (task) {
+              completedTasks.push(task);
+              this.pendingArchivings.delete(key); // Remove from pending
+            }
+          }
+        } else {
+          // Check if waiting period has expired
+          if (new Date() > new Date(pending.awaitingTransferUntil)) {
+            console.warn(
+              `[Archiving Automation] Gave up waiting for transfer for ${pending.processNumber} (7 days passed)`
+            );
+            this.pendingArchivings.delete(key);
+          }
+        }
+      } catch (error) {
+        console.error(
+          `[Archiving Automation] Error processing pending archiving for ${pending.processNumber}:`,
+          error
+        );
+      }
+    }
+
+    return completedTasks;
+  }
+
+  /**
+   * Archive a case (both sucumbencial and contratual)
+   */
+  private async archiveCase(
+    entryId: string,
+    processNumber: string,
+    clientName: string,
+    caseDetails: any,
+    entry: AsaasEntry,
+    transfer: AsaasTransfer | null,
+    caseType: string
+  ): Promise<ArchivingTask | null> {
+    try {
+      // Step 1: Validate all conditions
+      const validation = await this.validateArchivingConditions(
+        entry,
+        caseDetails,
+        transfer,
+        caseType
+      );
+
+      if (!validation.isValid) {
+        console.warn(
+          `[Archiving Automation] Validation failed for ${processNumber}:`,
+          validation.errors
+        );
+        return null;
+      }
+
+      // Step 2: Calculate fees and protocol
+      const feesInfo = this.calculateFeesAndProtocol(caseDetails, entry, transfer, caseType);
+
+      // Step 3: Create archiving task
+      const taskCreated = await this.createArchivingTask(
+        caseDetails.id,
+        processNumber,
+        clientName,
+        caseDetails,
+        entry,
+        transfer,
+        feesInfo
+      );
+
+      if (taskCreated) {
+        return {
+          entryId,
+          processNumber,
+          clientName,
+          caseType: (caseType as 'SUCUMBENCIAL' | 'CONTRATUAL' | 'OTHER'),
+          entryValue: entry.value,
+          transferValue: transfer?.value,
+          honorariesFees: feesInfo.honorariesFees,
+          repasse: feesInfo.repasse,
+          protocol: feesInfo.protocol,
+          readyForExecution: true,
+          createdAt: new Date().toISOString(),
+        };
+      }
+    } catch (error) {
+      console.error(`Error archiving case ${processNumber}:`, error);
+    }
+
+    return null;
+  }
+
+  /**
+   * Validate all 4 conditions before archiving
    */
   private async validateArchivingConditions(
-    crmCase: CRMCase,
+    entry: AsaasEntry,
     caseDetails: any,
-    transfer: any
+    transfer: AsaasTransfer | null,
+    caseType: string
   ): Promise<ArchivingValidation> {
     const checks = {
-      crmStatusReady: false,
-      transferConfirmed: false,
+      entryConfirmed: false,
       caseDataComplete: false,
       noActiveTasksBlocking: false,
+      transferConfirmedIfNeeded: false,
     };
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    // Check 1: CRM status is "Para Arquivamento" or "Pagamento Realizado"
-    if (crmCase.current_column?.toLowerCase().includes('arquivamento') ||
-        crmCase.current_column?.toLowerCase().includes('pagamento')) {
-      checks.crmStatusReady = true;
+    // Check 1: Entry is confirmed
+    if (entry.status === 'CONFIRMED') {
+      checks.entryConfirmed = true;
     } else {
-      errors.push(`CRM column is "${crmCase.current_column}", not in archiving status`);
+      errors.push(`Entry status is "${entry.status}", not confirmed`);
     }
 
-    // Check 2: Transfer is confirmed and completed
-    if (transfer.status === 'COMPLETED' || transfer.status === 'CONFIRMED') {
-      checks.transferConfirmed = true;
-    } else {
-      errors.push(`Transfer status is "${transfer.status}", not confirmed`);
-    }
-
-    // Check 3: Essential case data is present
+    // Check 2: Case data is complete
     if (caseDetails.number && caseDetails.plaintiff_name) {
       checks.caseDataComplete = true;
     } else {
       errors.push('Missing essential case data (process number or client name)');
     }
 
-    // Check 4: No blocking tasks (e.g., case is not marked as "under dispute")
+    // Check 3: No blocking tasks
     try {
       const activeTasks = await this.advboxClient.getCaseTasks(caseDetails.id);
-      const blockingTasks = activeTasks.filter(t =>
-        t.status === 'OPEN' &&
-        (t.title.toLowerCase().includes('disputa') ||
-         t.title.toLowerCase().includes('análise'))
+      const blockingTasks = activeTasks.filter(
+        (t) =>
+          t.status === 'OPEN' &&
+          (t.title.toLowerCase().includes('disputa') || t.title.toLowerCase().includes('análise'))
       );
 
       if (blockingTasks.length === 0) {
@@ -209,7 +414,20 @@ export class ArchivingAutomationService {
       warnings.push('Could not verify blocking tasks');
     }
 
-    const isValid = Object.values(checks).every(c => c === true);
+    // Check 4: Transfer confirmed if not sucumbencial
+    if (caseType === 'SUCUMBENCIAL') {
+      // No transfer needed
+      checks.transferConfirmedIfNeeded = true;
+    } else {
+      // For contratual, transfer must be confirmed
+      if (transfer && (transfer.status === 'COMPLETED' || transfer.status === 'CONFIRMED')) {
+        checks.transferConfirmedIfNeeded = true;
+      } else {
+        errors.push(`Transfer status is not confirmed (got: ${transfer?.status || 'null'})`);
+      }
+    }
+
+    const isValid = Object.values(checks).every((c) => c === true);
 
     return {
       isValid,
@@ -220,42 +438,62 @@ export class ArchivingAutomationService {
   }
 
   /**
-   * Calculate fees and generate archiving protocol
+   * Calculate fees based on case type
    */
-  private async calculateFeesAndProtocol(caseDetails: any, transfer: any) {
-    // Extract fee percentage from case metadata
-    const feePercentage = this.extractFeePercentage(caseDetails);
+  private calculateFeesAndProtocol(
+    caseDetails: any,
+    entry: AsaasEntry,
+    transfer: AsaasTransfer | null,
+    caseType: string
+  ) {
+    if (caseType === 'SUCUMBENCIAL') {
+      // Sucumbencial: entire entry is office fees (no repasse)
+      const honorariesFees = entry.value;
+      const repasse = 0;
+      const protocol = this.generateProtocol(caseDetails, entry.value, honorariesFees, repasse);
 
-    // Calculate fees
-    const totalValue = transfer.value;
-    const honorariesFees = totalValue * (feePercentage / 100);
-    const repasse = totalValue - honorariesFees;
+      return {
+        feePercentage: 100,
+        entryValue: entry.value,
+        transferValue: undefined,
+        honorariesFees,
+        repasse,
+        protocol,
+      };
+    } else {
+      // Contratual: calculate percentage from entry
+      const feePercentage = this.extractFeePercentage(caseDetails);
+      const totalValue = entry.value;
+      const honorariesFees = totalValue * (feePercentage / 100);
+      const repasse = totalValue - honorariesFees;
 
-    // Build protocol
-    const protocol = this.generateProtocol(caseDetails, totalValue, honorariesFees, repasse);
+      const protocol = this.generateProtocol(caseDetails, totalValue, honorariesFees, repasse);
 
-    return {
-      feePercentage,
-      totalValue,
-      honorariesFees,
-      repasse,
-      protocol,
-    };
+      return {
+        feePercentage,
+        entryValue: entry.value,
+        transferValue: transfer?.value,
+        honorariesFees,
+        repasse,
+        protocol,
+      };
+    }
   }
 
   /**
    * Extract fee percentage from case details
-   * Looks for multiple field names (taxas, percentage, taxa_percentual, etc.)
    */
   private extractFeePercentage(caseDetails: any): number {
     const fieldNames = [
-      'taxas',
-      'percentage',
-      'taxa_percentual',
+      'fee_percentage',
+      'honorarios_percentual',
       'percentual_honorarios',
+      'percentual',
+      'percentage',
+      'taxas',
+      'taxa_percentual',
       'honor_percent',
       'taxa',
-      'percentual',
       'fees',
     ];
 
@@ -274,15 +512,7 @@ export class ArchivingAutomationService {
   }
 
   /**
-   * Generate archiving protocol text
-   * Protocol format (fixed structure as shown in video):
-   * PROTOCOLO DE ARQUIVAMENTO - OBRIGAÇÕES INTEGRALMENTE CUMPRIDAS
-   * - Honorários contratuais iniciais: R$ X,XX
-   * - Honorários sucumbenciais: R$ X,XX
-   * - Honorários contratuais de Adm: R$ X,XX
-   * - Valor total de honorários: R$ X,XX
-   * - Nota fiscal emitida: () Sim () Não
-   * - Observação: "Não restam obrigações..."
+   * Generate archiving protocol
    */
   private generateProtocol(
     caseDetails: any,
@@ -313,14 +543,15 @@ export class ArchivingAutomationService {
     processNumber: string,
     clientName: string,
     caseDetails: any,
-    transfer: any,
+    entry: AsaasEntry,
+    transfer: AsaasTransfer | null,
     feesInfo: any
   ): Promise<boolean> {
     try {
       const taskPayload = {
         lawsuit_id: caseDetails.id,
         title: 'ARQUIVAMENTO DEFINITIVO DE CLIENTE (1 pts)',
-        description: `Caso arquivado automaticamente\nProcesso: ${processNumber}\nCliente: ${clientName}\nRepasse: ${transfer.value}`,
+        description: `Caso arquivado automaticamente\nProcesso: ${processNumber}\nCliente: ${clientName}\nValor entrada: ${entry.value}${transfer ? `\nValor repasse: ${transfer.value}` : ''}`,
         status: 'OPEN',
         priority: 'HIGH',
         due_date: new Date().toISOString().split('T')[0],
@@ -335,8 +566,9 @@ export class ArchivingAutomationService {
         },
         metadata: {
           automation_timestamp: new Date().toISOString(),
-          asaas_transfer_id: transfer.id,
-          crm_trigger: 'para_arquivamento',
+          asaas_entry_id: entry.id,
+          asaas_transfer_id: transfer?.id || null,
+          trigger: 'asaas_driven',
         },
       };
 

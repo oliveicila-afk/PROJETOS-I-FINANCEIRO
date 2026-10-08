@@ -1,4 +1,4 @@
-import { AdvBoxConfig } from '../config.js';
+import { getAdvBoxConfig, config } from '../config.js';
 
 export interface AdvBoxCase {
   id: string;
@@ -27,9 +27,10 @@ export class AdvBoxClient {
   private apiUrl: string;
   private token: string;
 
-  constructor(config: AdvBoxConfig) {
-    this.apiUrl = config.apiUrl;
-    this.token = config.token;
+  constructor() {
+    const advboxConfig = config.advbox;
+    this.apiUrl = advboxConfig.apiUrl;
+    this.token = advboxConfig.token;
   }
 
   private getHeaders(): Record<string, string> {
@@ -148,5 +149,97 @@ export class AdvBoxClient {
 
     const data = await response.json() as { cases: AdvBoxCase[] };
     return data.cases;
+  }
+
+  /**
+   * Get lawsuit details by process number
+   * Used in archiving automation to fetch case details when entry arrives with process number
+   */
+  async getLawsuitByNumber(processNumber: string): Promise<any> {
+    try {
+      const response = await fetch(
+        `${this.apiUrl}/lawsuits/search?number=${encodeURIComponent(processNumber)}`,
+        { headers: this.getHeaders() }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Erro ao buscar processo ${processNumber}: ${response.statusText}`);
+      }
+
+      const data = await response.json() as any;
+      return data.lawsuit || data.lawsuits?.[0] || null;
+    } catch (error) {
+      console.error(`Error fetching lawsuit by number ${processNumber}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Get lawsuit details by ID
+   * Legacy method for compatibility
+   */
+  async getLawsuit(lawsuitId: string): Promise<any> {
+    try {
+      const response = await fetch(
+        `${this.apiUrl}/lawsuits/${lawsuitId}`,
+        { headers: this.getHeaders() }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Erro ao buscar processo ${lawsuitId}: ${response.statusText}`);
+      }
+
+      return response.json();
+    } catch (error) {
+      console.error(`Error fetching lawsuit ${lawsuitId}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Get case tasks (for validation check #3)
+   */
+  async getCaseTasks(caseId: string): Promise<any[]> {
+    try {
+      const response = await fetch(
+        `${this.apiUrl}/lawsuits/${caseId}/tasks`,
+        { headers: this.getHeaders() }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Erro ao buscar tarefas: ${response.statusText}`);
+      }
+
+      const data = await response.json() as any;
+      return data.tasks || [];
+    } catch (error) {
+      console.error(`Error fetching case tasks for ${caseId}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Create task (for archiving)
+   */
+  async createTask(lawsuitId: string, payload: any): Promise<boolean> {
+    try {
+      const response = await fetch(
+        `${this.apiUrl}/lawsuits/${lawsuitId}/tasks`,
+        {
+          method: 'POST',
+          headers: this.getHeaders(),
+          body: JSON.stringify(payload),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Erro ao criar tarefa: ${response.statusText}`);
+      }
+
+      return true;
+    } catch (error) {
+      console.error(`Error creating task for lawsuit ${lawsuitId}:`, error);
+      throw error;
+    }
   }
 }

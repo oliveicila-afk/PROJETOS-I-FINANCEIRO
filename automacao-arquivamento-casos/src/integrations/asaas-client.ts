@@ -33,6 +33,28 @@ export interface TransferSearchFilters {
   offset?: number;
 }
 
+export interface EntrySearchFilters {
+  processNumber?: string;
+  status?: string;
+  minValue?: number;
+  maxValue?: number;
+  minDate?: string;
+  maxDate?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AsaasEntry {
+  id: string;
+  value: number;
+  description: string;
+  status: string;
+  createdAt: string;
+  dueDate?: string;
+  customerId?: string;
+  customerName?: string;
+}
+
 export class AsaasClient {
   private client: AxiosInstance;
   private apiUrl: string;
@@ -71,6 +93,64 @@ export class AsaasClient {
       return response.data.data || [];
     } catch (error) {
       console.error('Error searching payments in Asaas:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Search for entries (incoming payments/receivables)
+   * These are payments received in the office account
+   *
+   * Trigger point: detect when an entry with a process number is received
+   * Used to initiate the archiving workflow
+   */
+  async searchEntries(filters: EntrySearchFilters): Promise<AsaasEntry[]> {
+    try {
+      const response = await this.client.get('/payments', {
+        params: {
+          status: filters.status || 'CONFIRMED',
+          limit: filters.limit || 100,
+          offset: filters.offset || 0,
+        },
+      });
+
+      let entries = response.data.data || [];
+
+      // Client-side filtering for fields not available in API filters
+      if (filters.processNumber) {
+        entries = entries.filter((e: AsaasEntry) =>
+          e.description?.includes(filters.processNumber!)
+        );
+      }
+
+      if (filters.minValue) {
+        entries = entries.filter((e: AsaasEntry) => e.value >= filters.minValue!);
+      }
+
+      if (filters.maxValue) {
+        entries = entries.filter((e: AsaasEntry) => e.value <= filters.maxValue!);
+      }
+
+      if (filters.minDate) {
+        entries = entries.filter((e: AsaasEntry) =>
+          new Date(e.createdAt).getTime() >= new Date(filters.minDate!).getTime()
+        );
+      }
+
+      if (filters.maxDate) {
+        entries = entries.filter((e: AsaasEntry) =>
+          new Date(e.createdAt).getTime() <= new Date(filters.maxDate!).getTime()
+        );
+      }
+
+      // Sort by most recent first
+      entries.sort((a: AsaasEntry, b: AsaasEntry) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+
+      return entries;
+    } catch (error) {
+      console.error('Error searching entries in Asaas:', error);
       throw error;
     }
   }
