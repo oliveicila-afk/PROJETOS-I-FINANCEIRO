@@ -1,8 +1,8 @@
 # 📊 Status da Implementação - Automação de Arquivamento
 
 **Data**: 08/10/2026  
-**Status Geral**: 🟡 Parcialmente Completo (85%)  
-**Última Atualização**: Phase 3 Núcleo Implementado
+**Status Geral**: 🟡 80% Concluído - Aguardando User IDs do Advbox  
+**Última Atualização**: Case Type Detection + Archiving Task Creation Implementados
 
 ---
 

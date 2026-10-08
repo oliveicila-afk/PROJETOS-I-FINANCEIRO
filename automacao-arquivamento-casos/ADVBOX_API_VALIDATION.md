@@ -94,51 +94,97 @@ POST /posts
 
 ---
 
-## ❌ Não Encontrado na Documentação
+## ⏳ Implementação Pronta - Aguardando User IDs
 
-### Questão 1: Qual Campo Diferencia Sucumbencial de Contratual?
+### Status de Implementação
 
-**O que a documentação diz:**
-> "A documentação não informa um campo específico para diferenciar honorários sucumbenciais de contratuais. Os campos financeiros disponíveis são `fees_expec`, `fees_money` e `contingency`, mas nenhum deles é descrito dessa forma."
+✅ **CONCLUÍDO:**
+- Detecção automática de tipo de case (sucumbencial vs contratual)
+- Lógica baseada em comparação: `Valor alvará` vs `Honorários sucumbenciais`
+- Método `createArchivingTask()` com estrutura completa do protocolo
+- Configuração para User IDs e Task Type ID
 
-**Possibilidades:**
-1. Campo customizado não documentado
-2. Diferença em `type_lawsuit_id` ou `type`
-3. Informação em algum campo de notas/comments
-4. Está em um enum de tipos de processo que não foi documentado
-
-**Você precisa responder:**
-- Qual é o campo ou a forma como você diferencia sucumbencial de contratual atualmente?
-- Está em `type_lawsuit_id`? Há um ID específico?
-- Ou você extrai essa informação de outro lugar (contrato em Google Drive, por exemplo)?
+❌ **BLOQUEADO - AGUARDANDO:**
+- Valores numéricos dos User IDs (Priscila, Gabi, Anderson)
+- Task Type ID para "ARQUIVAMENTO DEFINITIVO DE CLIENTE (1 pt)"
 
 ---
 
-### Questão 2: User ID para Criar Tarefa
+### Como Obter os IDs Faltantes
 
-**O endpoint POST /posts requer:**
+#### 1. User IDs (Priscila, Gabi, Anderson)
+
+**Opção A: Pelo Advbox UI**
+1. Acesse: `https://app.advbox.com.br`
+2. Vá para: Configurações → Usuários / Gestão de Usuários
+3. Localize cada usuário e anote o ID numérico
+4. Copie os valores para o `.env`:
+   ```
+   ADVBOX_USER_ID_PRISCILA=<número>
+   ADVBOX_USER_ID_GABI=<número>
+   ADVBOX_USER_ID_ANDERSON=<número>
+   ```
+
+**Opção B: Pela API**
+```bash
+curl -X GET "https://app.advbox.com.br/api/v1/settings" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json"
 ```
-"from": ID do usuário criador
-"guests": [ID do responsável]
+Procure por `users` na resposta e encontre os IDs.
+
+#### 2. Task Type ID para Arquivamento
+
+**Pela API (GET /settings)**
+```bash
+curl -X GET "https://app.advbox.com.br/api/v1/settings" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json"
 ```
 
-**Você precisa responder:**
-- Qual é o user ID que deve criar a tarefa automaticamente?
-- Qual é o user ID de Gabi (responsável por arquivamento)?
-- Onde obter o `tasks_id` (tipo de tarefa)? Preciso chamar GET /settings?
+Procure por `tasks_types` ou estrutura similar e localize:
+- `"ARQUIVAMENTO DEFINITIVO DE CLIENTE (1 pt)"` 
+- Copie o ID numérico para o `.env`:
+  ```
+  ADVBOX_TASK_TYPE_ID_ARQUIVAMENTO=<número>
+  ```
 
 ---
 
-### Questão 3: Estrutura do Protocolo na Tarefa
+### Detecção de Tipo de Case - Implementada ✅
 
-**Na documentação de POST /posts:**
-- Campo `comments` pode receber a descrição/protocolo
-- Não há campo específico para "protocol_data" como implementei
+**Arquivo:** `src/utils/case-type-detector.ts`
 
-**Você precisa responder:**
-- O protocolo de arquivamento deve ir em `comments`?
-- Há um formato esperado para o protocolo?
-- Ou precisa ser em um campo customizado do Advbox?
+Detecta automaticamente:
+- **SUCUMBENCIAL**: Quando `Valor álvará` = `Honorários sucumbenciais`
+  - Exemplo: R$ 5.587,36 = R$ 5.587,36
+- **CONTRATUAL**: Quando `Valor álvará` > `Honorários sucumbenciais`
+  - Exemplo: R$ 16.460,61 > R$ 2.698,04
+  - Diferença é dividida por percentual de repasse
+
+**Função:**
+```typescript
+detectCaseType(alvaraValue: number, sucumbencialValue: number): CaseTypeDetectionResult
+```
+
+---
+
+### Estrutura do Protocolo - Pronto ✅
+
+O protocolo é construído automaticamente no campo `comments` de POST /posts:
+
+```
+PROTOCOLO DE ARQUIVAMENTO – OBRIGAÇÕES INTEGRALMENTE CUMPRIDAS
+
+**Honorários contratuais iniciais:** R$ X,XX
+**Honorários sucumbenciais:** R$ X,XX
+**Honorários contratuais de êxito:** R$ X,XX
+**Valor total de honorários:** R$ X,XX
+**Nota fiscal emitida:** (x) Sim
+
+Não restam obrigações a serem cumpridas, estando todas integralmente satisfeitas.
+Realizada a baixa e o arquivamento no ADVBOX.
+```
 
 ---
 
@@ -156,16 +202,21 @@ Este é o tipo de tarefa correto para criar a automação.
 ## 📋 Checklist para Próximos Passos
 
 ### Você (Priscila):
-- [ ] Responder: Qual campo diferencia sucumbencial de contratual?
-- [ ] Responder: Qual é o user ID para criar tarefas?
-- [ ] Responder: Qual é o user ID de Gabi?
-- [ ] Responder: Como estruturar o protocolo na tarefa?
+- [ ] Obter e copiar: ADVBOX_USER_ID_PRISCILA
+- [ ] Obter e copiar: ADVBOX_USER_ID_GABI  
+- [ ] Obter e copiar: ADVBOX_USER_ID_ANDERSON
+- [ ] Obter e copiar: ADVBOX_TASK_TYPE_ID_ARQUIVAMENTO
+- [ ] Enviar os 4 valores para atualização no `.env`
 
 ### Claude:
 - [x] Validar endpoints da API ✅
 - [x] Ajustar `advbox-client.ts` com endpoints corretos ✅
-- [ ] Após respostas: Ajustar lógica de determinação de case type
-- [ ] Após respostas: Ajustar payload de criação de tarefa
+- [x] Implementar detecção de case type (sucumbencial vs contratual) ✅
+- [x] Implementar `createArchivingTask()` com protocolo completo ✅
+- [x] Preparar configuração para User IDs ✅
+- [ ] **BLOQUEADO**: Receber User IDs de Priscila
+- [ ] Atualizar `.env` com valores reais
+- [ ] Testar criação de tarefas
 - [ ] Testes unitários
 - [ ] GitHub Actions workflow
 - [ ] Deploy
@@ -181,4 +232,4 @@ Este é o tipo de tarefa correto para criar a automação.
 
 ---
 
-**Status**: 🟢 Endpoints validados, 3 questões críticas pendentes de resposta
+**Status**: 🟡 Implementação 80% pronta - aguardando 4 User IDs e Task Type ID do Advbox
