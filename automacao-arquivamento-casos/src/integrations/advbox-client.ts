@@ -302,7 +302,7 @@ export class AdvBoxClient {
   /**
    * Automatically fetch all user IDs and task type ID from Advbox
    * Used when environment variables are not set
-   * Searches by name: Priscila, Gabi, Anderson
+   * Searches by name: Priscila, Gabriele, Anderson
    * Searches for task type: "ARQUIVAMENTO DEFINITIVO DE CLIENTE"
    */
   async getOrFetchUserIds(): Promise<{
@@ -342,10 +342,10 @@ export class AdvBoxClient {
     }
 
     if (result.gabi === 'PENDING') {
-      const gabi = await this.getUserByName('Gabi');
+      const gabi = await this.getUserByName('Gabriele');
       if (gabi) {
         result.gabi = gabi.id;
-        console.log(`✅ Found Gabi: ${gabi.id}`);
+        console.log(`✅ Found Gabriele: ${gabi.id}`);
       }
     }
 

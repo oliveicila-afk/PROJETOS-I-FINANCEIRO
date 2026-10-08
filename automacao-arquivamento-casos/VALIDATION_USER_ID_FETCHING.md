@@ -71,7 +71,7 @@ async getOrFetchUserIds(): Promise<{
 2. Verifica se algum ID está marcado como `'PENDING'`
 3. Se `'PENDING'`, busca automaticamente via API:
    - Chama `getUserByName('Priscila')`
-   - Chama `getUserByName('Gabi')`
+   - Chama `getUserByName('Gabriele')`
    - Chama `getUserByName('Anderson')`
    - Chama `getTaskTypeByName('ARQUIVAMENTO DEFINITIVO DE CLIENTE')`
 4. Retorna todos os 4 IDs
@@ -93,7 +93,7 @@ const ids = await client.getOrFetchUserIds();
 ```
 🔍 Fetching User IDs and Task Type ID from Advbox...
 ✅ Found Priscila: 12345
-✅ Found Gabi: 67890
+✅ Found Gabriele: 67890
 ✅ Found Anderson: 11111
 ✅ Found Task Type: 22222
 ✅ All User IDs and Task Type ID successfully fetched!
@@ -152,7 +152,7 @@ getOrFetchUserIds() lê config.advbox.userIds
             ↓
 Se algum ID é 'PENDING':
     ├─ getUserByName('Priscila') → API GET /users
-    ├─ getUserByName('Gabi') → API GET /users
+    ├─ getUserByName('Gabriele') → API GET /users
     ├─ getUserByName('Anderson') → API GET /users
     └─ getTaskTypeByName('ARQUIVAMENTO DEFINITIVO DE CLIENTE') → API GET /settings
             ↓
@@ -194,7 +194,7 @@ node dist/domain/archiving-automation.js
 # Verificar logs:
 # 🔍 Fetching User IDs and Task Type ID from Advbox...
 # ✅ Found Priscila: <ID>
-# ✅ Found Gabi: <ID>
+# ✅ Found Gabriele: <ID>
 # ✅ Found Anderson: <ID>
 # ✅ Found Task Type: <ID>
 ```
@@ -221,7 +221,7 @@ ADVBOX_TASK_TYPE_ID_ARQUIVAMENTO=22222
 **Depois**: Sistema busca automaticamente usando nomes
 ```
 ✅ ADVBOX_USER_ID_PRISCILA (busca por "Priscila")
-✅ ADVBOX_USER_ID_GABI (busca por "Gabi")
+✅ ADVBOX_USER_ID_GABI (busca por "Gabriele")
 ✅ ADVBOX_USER_ID_ANDERSON (busca por "Anderson")
 ✅ ADVBOX_TASK_TYPE_ID_ARQUIVAMENTO (busca por "ARQUIVAMENTO DEFINITIVO DE CLIENTE")
 ```

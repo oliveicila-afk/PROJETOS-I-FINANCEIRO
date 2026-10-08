@@ -78,9 +78,9 @@
   - Orquestra a busca de todos os 4 IDs necessários
   - Verifica se IDs já estão configurados (não estão PENDING)
   - Se PENDING, busca automaticamente:
-    * ID de Priscila (usuário)
-    * ID de Gabi (usuário)
-    * ID de Anderson (usuário)
+    * ID de Priscila de Oliveira dos Santos (usuário)
+    * ID de Gabriele Nascimento (usuário)
+    * ID de Anderson da Silva Costa (usuário)
     * ID de ARQUIVAMENTO DEFINITIVO DE CLIENTE (tipo de tarefa)
   - Retorna todos os 4 IDs com logging detalhado
 
@@ -145,16 +145,25 @@
 
 **Agora** (versão nova):
 - Sistema busca automaticamente os User IDs pelo nome
-- Procura por: "Priscila", "Gabi", "Anderson", "ARQUIVAMENTO DEFINITIVO DE CLIENTE"
+- Procura por: "Priscila", "Gabriele", "Anderson", "ARQUIVAMENTO DEFINITIVO DE CLIENTE"
 - Sem necessidade de você fornecer valores numéricos
 - Exatamente como você mencionou: "em outras automações que a gente já fez, eu nunca precisei passar a ideia de quem está envolvido"
 
+## ✅ Q1 Respondida - User Names Confirmados!
+
+Os nomes foram confirmados pelas imagens:
+- ✅ **Priscila de Oliveira dos Santos**
+- ✅ **Gabriele Nascimento**
+- ✅ **Anderson da Silva Costa**
+
+O sistema agora busca por "Priscila", "Gabriele", "Anderson" (a busca é case-insensitive, então encontra os nomes completos).
+
 ## ❓ O Que Ainda Preciso De Você
 
-Para completar os últimos 10% e colocar tudo em produção, preciso de **3 respostas claras**:
+Para completar os últimos 10% e colocar tudo em produção, preciso de **2 respostas claras**:
 
-### 1️⃣ **Q: Confirmação dos User Names**
-> Os nomes dos usuários no Advbox são exatamente: "Priscila", "Gabi", "Anderson"?
+### 2️⃣ **Q: Frequência da Automação**
+> Com qual frequência a automação deve rodar?
 
 **Importância**: O sistema busca esses usuários por nome exato (case-insensitive)  
 **Sua resposta**: "Sim, estão corretos" ou "Corrigir para: [nomes reais]"
