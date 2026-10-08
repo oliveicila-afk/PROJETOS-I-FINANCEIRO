@@ -53,20 +53,24 @@ export class AlertingService {
       historyService: config.historyService,
     };
 
-    console.log('[Alerting Service] Initialized with config:', {
-      slack: this.config.enableSlack,
-      email: this.config.enableEmail,
-      logging: this.config.enableLogging,
-    });
+    if (this.config.enableLogging) {
+      console.log('[Alerting Service] Initialized with config:', {
+        slack: this.config.enableSlack,
+        email: this.config.enableEmail,
+        logging: this.config.enableLogging,
+      });
+    }
   }
 
   /**
    * Envia alerta de sucesso
    */
   async notifySuccess(notification: ArchivingNotification): Promise<AlertResult> {
-    console.log(
-      `[Alerting Service] 📢 SUCCESS: ${notification.clientName} | ${notification.processNumber}`
-    );
+    if (this.config.enableLogging) {
+      console.log(
+        `[Alerting Service] 📢 SUCCESS: ${notification.clientName} | ${notification.processNumber}`
+      );
+    }
 
     const result: AlertResult = {
       type: 'success',
@@ -76,7 +80,7 @@ export class AlertingService {
     };
 
     // Slack
-    if (this.config.enableSlack && this.config.slackNotifier?.isConfigured()) {
+    if (this.config.enableSlack) {
       result.channels.slack = await this.sendToSlack(notification, 'success');
     }
 
@@ -97,9 +101,11 @@ export class AlertingService {
    * Envia alerta de erro
    */
   async notifyError(notification: ArchivingNotification): Promise<AlertResult> {
-    console.error(
-      `[Alerting Service] 🚨 ERROR: ${notification.clientName} | ${notification.error}`
-    );
+    if (this.config.enableLogging) {
+      console.error(
+        `[Alerting Service] 🚨 ERROR: ${notification.clientName} | ${notification.error}`
+      );
+    }
 
     const result: AlertResult = {
       type: 'error',
@@ -109,7 +115,7 @@ export class AlertingService {
     };
 
     // Slack
-    if (this.config.enableSlack && this.config.slackNotifier?.isConfigured()) {
+    if (this.config.enableSlack) {
       result.channels.slack = await this.sendToSlack(notification, 'error');
     }
 
@@ -130,9 +136,11 @@ export class AlertingService {
    * Envia alerta de warning
    */
   async notifyWarning(notification: ArchivingNotification): Promise<AlertResult> {
-    console.warn(
-      `[Alerting Service] ⚠️  WARNING: ${notification.clientName} | ${notification.message}`
-    );
+    if (this.config.enableLogging) {
+      console.warn(
+        `[Alerting Service] ⚠️  WARNING: ${notification.clientName} | ${notification.message}`
+      );
+    }
 
     const result: AlertResult = {
       type: 'warning',
@@ -142,7 +150,7 @@ export class AlertingService {
     };
 
     // Slack
-    if (this.config.enableSlack && this.config.slackNotifier?.isConfigured()) {
+    if (this.config.enableSlack) {
       result.channels.slack = await this.sendToSlack(notification, 'warning');
     }
 
@@ -163,9 +171,11 @@ export class AlertingService {
    * Envia alerta crítico
    */
   async notifyCritical(notification: ArchivingNotification): Promise<AlertResult> {
-    console.error(
-      `[Alerting Service] 🔴 CRITICAL: ${notification.clientName} | ${notification.error}`
-    );
+    if (this.config.enableLogging) {
+      console.error(
+        `[Alerting Service] 🔴 CRITICAL: ${notification.clientName} | ${notification.error}`
+      );
+    }
 
     this.criticalAlertCount++;
 
@@ -176,8 +186,8 @@ export class AlertingService {
       timestamp: new Date().toISOString(),
     };
 
-    // Slack (sempre)
-    if (this.config.slackNotifier?.isConfigured()) {
+    // Slack (sempre, se enableSlack)
+    if (this.config.enableSlack) {
       result.channels.slack = await this.sendToSlack(notification, 'critical');
     }
 
@@ -200,7 +210,7 @@ export class AlertingService {
     }
 
     // Se 3+ alertas críticos em sequência, pode indicar falha sistêmica
-    if (this.criticalAlertCount >= 3) {
+    if (this.criticalAlertCount >= 3 && this.config.enableLogging) {
       console.error('[Alerting Service] ⚠️  Multiple critical alerts detected - system may be unstable');
     }
 
@@ -227,11 +237,15 @@ export class AlertingService {
         await this.config.slackNotifier.notifyError(notification);
       }
 
-      console.log('[Alerting Service] ✅ Slack notification sent');
+      if (this.config.enableLogging) {
+        console.log('[Alerting Service] ✅ Slack notification sent');
+      }
       return { success: true };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      console.error('[Alerting Service] ❌ Slack notification failed:', errorMsg);
+      if (this.config.enableLogging) {
+        console.error('[Alerting Service] ❌ Slack notification failed:', errorMsg);
+      }
       return { success: false, error: errorMsg };
     }
   }

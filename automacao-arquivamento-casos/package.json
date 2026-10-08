@@ -6,7 +6,10 @@
   "description": "Automação do procedimento de arquivamento de casos com coleta de informações de Advbox/Asaas",
   "scripts": {
     "build": "node ./node_modules/typescript/bin/tsc",
-    "test": "node --import tsx --test test/*.test.ts",
+    "test": "vitest run",
+    "test:watch": "vitest watch",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage",
     "cli": "node --import tsx src/cli.ts",
     "server": "node --import tsx src/server.ts",
     "archive-case": "node --import tsx src/cli/archive-case-cli.ts"
@@ -20,6 +23,7 @@
     "@types/express": "^4.17.21",
     "@types/node": "^22.13.4",
     "tsx": "^4.19.3",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^5.0.3"
   }
 }

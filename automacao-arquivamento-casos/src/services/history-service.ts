@@ -82,9 +82,9 @@ export class HistoryService {
     try {
       this.state.lastUpdated = new Date().toISOString();
 
-      // Trunca para maxEntries
+      // Trunca para maxEntries (keeping the newest entries)
       if (this.state.entries.length > this.maxEntries) {
-        this.state.entries = this.state.entries.slice(-this.maxEntries);
+        this.state.entries = this.state.entries.slice(0, this.maxEntries);
       }
 
       fs.writeFileSync(this.filePath, JSON.stringify(this.state, null, 2), 'utf-8');
@@ -103,7 +103,7 @@ export class HistoryService {
       id: this.generateId(),
     };
 
-    this.state.entries.push(fullEntry);
+    this.state.entries.unshift(fullEntry); // Add to beginning (most recent first)
     this.state.totalAttempts++;
 
     if (entry.status === 'success') {
@@ -138,10 +138,10 @@ export class HistoryService {
   }
 
   /**
-   * Busca últimas N entradas
+   * Busca últimas N entradas (mais recentes primeiro)
    */
   getLastEntries(count: number = 10): ArchivingHistoryEntry[] {
-    return this.state.entries.slice(-count);
+    return this.state.entries.slice(0, count);
   }
 
   /**
@@ -159,18 +159,18 @@ export class HistoryService {
     totalAttempts: number;
     successCount: number;
     errorCount: number;
-    successRate: string;
+    successRate: number;
     lastUpdated: string;
   } {
     const total = this.state.totalAttempts;
     const success = this.state.successCount;
-    const rate = total > 0 ? ((success / total) * 100).toFixed(2) : '0.00';
+    const rate = total > 0 ? (success / total) * 100 : 0;
 
     return {
       totalAttempts: total,
       successCount: success,
       errorCount: this.state.errorCount,
-      successRate: `${rate}%`,
+      successRate: Math.round(rate * 100) / 100, // Round to 2 decimal places
       lastUpdated: this.state.lastUpdated,
     };
   }

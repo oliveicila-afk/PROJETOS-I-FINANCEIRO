@@ -64,7 +64,7 @@ export class RetryManager {
   ): Promise<T> {
     let lastError: Error | null = null;
 
-    for (let attempt = 1; attempt <= this.config.maxRetries; attempt++) {
+    for (let attempt = 1; attempt <= this.config.maxRetries + 1; attempt++) {
       try {
         console.log(`[Retry Manager] Attempt ${attempt}/${this.config.maxRetries}`);
         const result = await operation();
