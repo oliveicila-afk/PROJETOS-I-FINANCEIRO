@@ -22,9 +22,10 @@ export class ArchivingAdapter {
   private advboxClient: AdvBoxClient;
   private asaasClient: AsaasClient;
 
-  constructor(advboxConfig: AdvBoxConfig, asaasConfig: AsaasConfig) {
-    this.advboxClient = new AdvBoxClient(advboxConfig);
-    this.asaasClient = new AsaasClient(asaasConfig);
+  constructor(advboxConfig?: AdvBoxConfig, asaasConfig?: AsaasConfig) {
+    // Clients are instantiated without parameters - they read from global config
+    this.advboxClient = new AdvBoxClient();
+    this.asaasClient = new AsaasClient();
   }
 
   /**

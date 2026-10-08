@@ -51,14 +51,162 @@ export interface PendingArchiving {
   awaitingTransferUntil: string;
 }
 
+export interface WebhookArchivingPayload {
+  lawsuitId: string;
+  processNumber: string;
+  clientName: string;
+  caseType?: 'SUCUMBENCIAL' | 'CONTRATUAL' | 'OTHER';
+}
+
 export class ArchivingAutomationService {
-  private advboxClient: AdvboxClient;
+  private advboxClient: AdvBoxClient;
   private asaasClient: AsaasClient;
   private pendingArchivings: Map<string, PendingArchiving> = new Map();
 
   constructor() {
     this.advboxClient = new AdvBoxClient();
     this.asaasClient = new AsaasClient();
+  }
+
+  /**
+   * Process archiving case triggered by webhook from CRM Financial
+   * Direct entry point when case is moved to archiving column
+   */
+  async processArchivingCase(payload: WebhookArchivingPayload): Promise<ArchivingTask | null> {
+    console.log(
+      `[Archiving Automation] Processing webhook archiving for case: ${payload.processNumber}`
+    );
+
+    try {
+      // Step 1: Get case details from Advbox
+      const caseDetails = await this.advboxClient.getLawsuitByNumber(payload.processNumber);
+
+      if (!caseDetails) {
+        throw new Error(
+          `Could not find case details for process ${payload.processNumber} in Advbox`
+        );
+      }
+
+      console.log(`[Archiving Automation] Found case: ${caseDetails.number} (${payload.clientName})`);
+
+      // Step 2: Determine case type if not provided
+      let caseType = payload.caseType || this.determineCaseType(caseDetails);
+      console.log(`[Archiving Automation] Case type: ${caseType}`);
+
+      // Step 3: Search for matching Asaas entry and transfer
+      const { entry, transfer } = await this.findAsaasPaymentInfo(
+        payload.processNumber,
+        caseType
+      );
+
+      if (!entry) {
+        throw new Error(
+          `Could not find matching payment entry in Asaas for process ${payload.processNumber}`
+        );
+      }
+
+      console.log(
+        `[Archiving Automation] Found Asaas entry: ${entry.id} (R$ ${entry.value})`
+      );
+
+      // Step 4: Validate archiving conditions
+      const validation = await this.validateArchivingConditions(
+        entry,
+        caseDetails,
+        transfer,
+        caseType
+      );
+
+      if (!validation.isValid) {
+        console.warn(
+          `[Archiving Automation] Validation failed for ${payload.processNumber}:`,
+          validation.errors
+        );
+        throw new Error(`Archiving validation failed: ${validation.errors.join(', ')}`);
+      }
+
+      // Step 5: Calculate fees and protocol
+      const feesInfo = this.calculateFeesAndProtocol(caseDetails, entry, transfer, caseType);
+
+      // Step 6: Create archiving task
+      const taskCreated = await this.createArchivingTask(
+        caseDetails.id,
+        payload.processNumber,
+        payload.clientName,
+        caseDetails,
+        entry,
+        transfer,
+        feesInfo
+      );
+
+      if (taskCreated) {
+        console.log(
+          `[Archiving Automation] ✅ Archiving task created successfully for ${payload.processNumber}`
+        );
+
+        return {
+          entryId: entry.id,
+          processNumber: payload.processNumber,
+          clientName: payload.clientName,
+          caseType: caseType as 'SUCUMBENCIAL' | 'CONTRATUAL' | 'OTHER',
+          entryValue: entry.value,
+          transferValue: transfer?.value,
+          honorariesFees: feesInfo.honorariesFees,
+          repasse: feesInfo.repasse,
+          protocol: feesInfo.protocol,
+          readyForExecution: true,
+          createdAt: new Date().toISOString(),
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.error(`[Archiving Automation] Error processing webhook archiving:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Find Asaas payment info (entry and optional transfer) for a case
+   */
+  private async findAsaasPaymentInfo(
+    processNumber: string,
+    caseType: string
+  ): Promise<{ entry: AsaasEntry | null; transfer: AsaasTransfer | null }> {
+    try {
+      // Search for confirmed entry with process number
+      const entries = await this.asaasClient.searchEntries({
+        status: 'CONFIRMED',
+        limit: 50,
+      });
+
+      const matchingEntry = entries.find((e) => {
+        const entryProcessNumber = this.extractProcessNumber(e.description);
+        return entryProcessNumber === processNumber;
+      });
+
+      if (!matchingEntry) {
+        return { entry: null, transfer: null };
+      }
+
+      // If sucumbencial, no transfer needed
+      if (caseType === 'SUCUMBENCIAL') {
+        return { entry: matchingEntry, transfer: null };
+      }
+
+      // For contratual, search for transfer
+      const transfers = await this.asaasClient.searchTransfers({
+        processNumber,
+        status: 'COMPLETED',
+      });
+
+      const matchingTransfer = transfers.length > 0 ? transfers[0] : null;
+
+      return { entry: matchingEntry, transfer: matchingTransfer };
+    } catch (error) {
+      console.error(`Error finding Asaas payment info:`, error);
+      return { entry: null, transfer: null };
+    }
   }
 
   /**

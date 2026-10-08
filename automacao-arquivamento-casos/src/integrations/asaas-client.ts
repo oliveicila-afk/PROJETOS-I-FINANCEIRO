@@ -188,9 +188,10 @@ export class AsaasClient {
       }
 
       if (filters.cpf) {
+        const cpfToFind = filters.cpf;
         transfers = transfers.filter((t: AsaasTransfer) =>
-          t.recipientCpf === filters.cpf ||
-          t.description?.includes(filters.cpf)
+          t.recipientCpf === cpfToFind ||
+          (t.description?.includes(cpfToFind) ?? false)
         );
       }
 
