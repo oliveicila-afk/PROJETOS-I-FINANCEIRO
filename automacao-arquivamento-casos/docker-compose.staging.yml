@@ -1,0 +1,118 @@
+version: '3.9'
+
+services:
+  # ============================================
+  # Archiving Automation Service (Staging)
+  # ============================================
+  archiving-api-staging:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: archiving-api-staging
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: staging
+      ENVIRONMENT: staging
+      PORT: 3001
+      HOST: 0.0.0.0
+      # Load from .env.staging
+      ADVBOX_TOKEN: ${ADVBOX_TOKEN}
+      ADVBOX_API_URL: ${ADVBOX_API_URL}
+      ADVBOX_USER_ID_PRISCILA: ${ADVBOX_USER_ID_PRISCILA}
+      ADVBOX_USER_ID_GABI: ${ADVBOX_USER_ID_GABI}
+      ADVBOX_USER_ID_ANDERSON: ${ADVBOX_USER_ID_ANDERSON}
+      ADVBOX_TASK_TYPE_ID_ARQUIVAMENTO: ${ADVBOX_TASK_TYPE_ID_ARQUIVAMENTO}
+      ASAAS_API_TOKEN: ${ASAAS_API_TOKEN}
+      ASAAS_API_URL: ${ASAAS_API_URL}
+      CRM_FINANCIAL_WEBHOOK_URL: ${CRM_FINANCIAL_WEBHOOK_URL}
+      CRM_FINANCIAL_API_TOKEN: ${CRM_FINANCIAL_API_TOKEN}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
+      SLACK_CHANNEL_ALERTS: ${SLACK_CHANNEL_ALERTS}
+      SLACK_CHANNEL_LOGS: ${SLACK_CHANNEL_LOGS}
+      RETRY_MAX_ATTEMPTS: ${RETRY_MAX_ATTEMPTS}
+      RETRY_INITIAL_DELAY_MS: ${RETRY_INITIAL_DELAY_MS}
+      RETRY_MAX_DELAY_MS: ${RETRY_MAX_DELAY_MS}
+      RETRY_BACKOFF_MULTIPLIER: ${RETRY_BACKOFF_MULTIPLIER}
+      POLLING_ENABLED: ${POLLING_ENABLED}
+      POLLING_INTERVAL_MINUTES: ${POLLING_INTERVAL_MINUTES}
+      LOG_LEVEL: ${LOG_LEVEL}
+      ARCHIVING_HISTORY_FILE: ${ARCHIVING_HISTORY_FILE}
+      ALERTING_ENABLED: ${ALERTING_ENABLED}
+      ALERTING_SLACK_ENABLED: ${ALERTING_SLACK_ENABLED}
+      ALERTING_EMAIL_ENABLED: ${ALERTING_EMAIL_ENABLED}
+      ALERTING_LOGGING_ENABLED: ${ALERTING_LOGGING_ENABLED}
+    volumes:
+      - ./src:/app/src
+      - ./dist:/app/dist
+      - ./logs:/app/logs
+      - ./.archiving-history.staging.json:/app/.archiving-history.staging.json
+    depends_on:
+      - redis-staging
+    networks:
+      - archiving-staging
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ============================================
+  # Redis Cache for Staging
+  # ============================================
+  redis-staging:
+    image: redis:7-alpine
+    container_name: redis-staging
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data-staging:/data
+    networks:
+      - archiving-staging
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ============================================
+  # Log Aggregation (ELK Stack - Staging)
+  # ============================================
+  elasticsearch-staging:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.5.0
+    container_name: elasticsearch-staging
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch-data-staging:/usr/share/elasticsearch/data
+    networks:
+      - archiving-staging
+
+  kibana-staging:
+    image: docker.elastic.co/kibana/kibana:8.5.0
+    container_name: kibana-staging
+    restart: unless-stopped
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch-staging:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch-staging
+    networks:
+      - archiving-staging
+
+networks:
+  archiving-staging:
+    driver: bridge
+
+volumes:
+  redis-data-staging:
+  elasticsearch-data-staging:
