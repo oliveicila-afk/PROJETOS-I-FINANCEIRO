@@ -272,11 +272,46 @@
 - `docs/GITHUB_ACTIONS_INTEGRATION.md` (280 linhas - NOVO)
 - `src/domain/archiving-automation.ts` (+170 linhas com novo método)
 
-**Status**: 95% → 97% → 98% → 100% Completo
+### Etapa 5.1: Integração de Etapa 5 no Webhook Server ✅ COMPLETA
+
+**O que foi integrado**:
+- ✅ **WebhookHandler** agora usa `ArchivingAutomationWithAlerts`
+  - Retry automático com exponential backoff
+  - Notificações Slack em tempo real
+  - Persistência de histórico em `.archiving-history.json`
+  - Multi-channel alerting (Slack, Email, Logging, History)
+  
+- ✅ **WebhookServer** expõe novos endpoints:
+  - `GET /archiving/history` - Histórico completo de processamentos
+  - `GET /archiving/stats` - Estatísticas em tempo real
+  - `GET /webhook/health` - Health check com stats e critical alerts
+
+- ✅ **Configuração via variáveis de ambiente**:
+  - `RETRY_MAX_ATTEMPTS` (default: 3)
+  - `RETRY_INITIAL_DELAY_MS` (default: 1000)
+  - `RETRY_MAX_DELAY_MS` (default: 30000)
+  - `RETRY_BACKOFF_MULTIPLIER` (default: 2)
+  - `SLACK_WEBHOOK_URL` - Enable/disable Slack
+  - `SLACK_CHANNEL` - Canal para sucessos (#automacao)
+  - `SLACK_CHANNEL_ALERTS` - Canal para erros (#alertas)
+
+**Fluxo Completo**:
+```
+Webhook → WebhookHandler → ArchivingAutomationWithAlerts → RetryManager
+  ↓         ↓                     ↓                         ↓
+Valida   Dispara            Executa com retry        1s→2s→4s→...
+Auth     Automação          com notificações         (backoff)
+         com retries        e histórico
+```
+
+**Documentação**: `ETAPA5_INTEGRATION.md` - Guia completo com exemplos
+
+**Status**: 100% → 100.5% Integração Completa
 - Etapa 2 (Webhook): ✅ Completa
 - Etapa 3 (Polling): ✅ Completa
 - Etapa 4 (GitHub Actions): ✅ Completa
 - Etapa 5 (Error Handling & Alertas): ✅ Completa
+- Etapa 5.1 (Integração): ✅ Completa
 - Próximas: Etapa 6 (Testes), Etapa 7 (Staging), Etapa 8 (Produção)
 
 ---
