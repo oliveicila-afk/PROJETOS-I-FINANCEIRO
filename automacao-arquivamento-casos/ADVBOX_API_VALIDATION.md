@@ -142,6 +142,17 @@ POST /posts
 
 ---
 
+## ✅ CONFIRMADO DO VÍDEO (2026-10-07)
+
+### Task Type ID para Arquivamento
+**Task Type encontrado na gravação:**
+```
+ARQUIVAMENTO DEFINITIVO DE CLIENTE (1 pt)
+```
+Este é o tipo de tarefa correto para criar a automação.
+
+---
+
 ## 📋 Checklist para Próximos Passos
 
 ### Você (Priscila):
