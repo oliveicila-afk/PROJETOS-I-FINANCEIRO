@@ -152,13 +152,14 @@ export class AdvBoxClient {
   }
 
   /**
-   * Get lawsuit details by process number
+   * Get lawsuit details by process number (CNJ format)
+   * API endpoint: GET /lawsuits?process_number=NUMERO_CNJ
    * Used in archiving automation to fetch case details when entry arrives with process number
    */
   async getLawsuitByNumber(processNumber: string): Promise<any> {
     try {
       const response = await fetch(
-        `${this.apiUrl}/lawsuits/search?number=${encodeURIComponent(processNumber)}`,
+        `${this.apiUrl}/lawsuits?process_number=${encodeURIComponent(processNumber)}`,
         { headers: this.getHeaders() }
       );
 
@@ -167,7 +168,8 @@ export class AdvBoxClient {
       }
 
       const data = await response.json() as any;
-      return data.lawsuit || data.lawsuits?.[0] || null;
+      // API returns array of lawsuits, get the first match
+      return data.data?.[0] || data?.lawsuits?.[0] || null;
     } catch (error) {
       console.error(`Error fetching lawsuit by number ${processNumber}:`, error);
       return null;
@@ -219,16 +221,30 @@ export class AdvBoxClient {
   }
 
   /**
-   * Create task (for archiving)
+   * Create post/task (for archiving)
+   * API endpoint: POST /posts
+   * Required fields: from, guests (array), tasks_id, lawsuits_id, start_date
    */
   async createTask(lawsuitId: string, payload: any): Promise<boolean> {
     try {
+      // Transform payload for /posts endpoint
+      const postPayload = {
+        from: payload.from || config.advbox.userId, // Needs to be set in config
+        guests: payload.guests || [payload.assignedTo],
+        tasks_id: payload.tasks_id || payload.taskTypeId, // Task type ID from /settings
+        lawsuits_id: lawsuitId,
+        start_date: payload.due_date || new Date().toISOString().split('T')[0],
+        comments: payload.description || payload.title,
+        urgent: payload.priority === 'HIGH',
+        important: true,
+      };
+
       const response = await fetch(
-        `${this.apiUrl}/lawsuits/${lawsuitId}/tasks`,
+        `${this.apiUrl}/posts`,
         {
           method: 'POST',
           headers: this.getHeaders(),
-          body: JSON.stringify(payload),
+          body: JSON.stringify(postPayload),
         }
       );
 
