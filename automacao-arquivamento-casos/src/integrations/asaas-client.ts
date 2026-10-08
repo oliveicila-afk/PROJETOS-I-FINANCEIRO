@@ -1,4 +1,5 @@
-import { AsaasConfig } from '../config.js';
+import axios, { AxiosInstance } from 'axios';
+import { config } from '../config.js';
 
 export interface AsaasPayment {
   id: string;
@@ -9,64 +10,144 @@ export interface AsaasPayment {
   createdAt: string;
 }
 
+export interface AsaasTransfer {
+  id: string;
+  value: number;
+  recipient: string;
+  recipientCpf?: string;
+  description?: string;
+  status: string;
+  createdAt: string;
+  completedAt?: string;
+  type: 'PIX' | 'TED' | 'DOC' | 'TRANSFER';
+}
+
+export interface TransferSearchFilters {
+  clientName?: string;
+  processNumber?: string;
+  cpf?: string;
+  status?: string;
+  minValue?: number;
+  maxValue?: number;
+  limit?: number;
+  offset?: number;
+}
+
 export class AsaasClient {
+  private client: AxiosInstance;
   private apiUrl: string;
-  private apiKey: string;
 
-  constructor(config: AsaasConfig) {
-    this.apiUrl = config.apiUrl;
-    this.apiKey = config.apiKey;
+  constructor() {
+    this.apiUrl = config.asaas.apiUrl;
+    this.client = axios.create({
+      baseURL: this.apiUrl,
+      headers: {
+        'access_token': config.asaas.apiKey,
+        'Content-Type': 'application/json',
+      },
+      timeout: 10000,
+    });
   }
 
-  private getHeaders(): Record<string, string> {
-    return {
-      'access_token': this.apiKey,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    };
-  }
-
+  /**
+   * Search for payments (incoming invoices/receivables)
+   */
   async searchPayments(filters: {
     customerId?: string;
     status?: string;
     limit?: number;
     offset?: number;
   }): Promise<AsaasPayment[]> {
-    const params = new URLSearchParams();
-    if (filters.customerId) params.append('customer', filters.customerId);
-    if (filters.status) params.append('status', filters.status);
-    params.append('limit', String(filters.limit || 100));
-    params.append('offset', String(filters.offset || 0));
+    try {
+      const response = await this.client.get('/payments', {
+        params: {
+          customer: filters.customerId,
+          status: filters.status,
+          limit: filters.limit || 100,
+          offset: filters.offset || 0,
+        },
+      });
 
-    const response = await fetch(
-      `${this.apiUrl}/payments?${params.toString()}`,
-      { headers: this.getHeaders() }
-    );
-
-    if (!response.ok) {
-      throw new Error(`Erro ao buscar pagamentos Asaas: ${response.statusText}`);
+      return response.data.data || [];
+    } catch (error) {
+      console.error('Error searching payments in Asaas:', error);
+      throw error;
     }
+  }
 
-    const data = await response.json() as { data: AsaasPayment[] };
-    return data.data;
+  /**
+   * Search for transfers (outgoing - the "repasse" to clients)
+   * These are PIX/TED transfers sent to client accounts
+   *
+   * Used to detect when a transfer has been completed to confirm archiving can proceed
+   */
+  async searchTransfers(filters: TransferSearchFilters): Promise<AsaasTransfer[]> {
+    try {
+      // Build search query combining multiple filters
+      const response = await this.client.get('/transfers', {
+        params: {
+          status: filters.status || 'COMPLETED',
+          limit: filters.limit || 100,
+          offset: filters.offset || 0,
+        },
+      });
+
+      let transfers = response.data.data || [];
+
+      // Client-side filtering for fields not available in API filters
+      if (filters.clientName) {
+        transfers = transfers.filter((t: AsaasTransfer) =>
+          t.recipient.toLowerCase().includes(filters.clientName!.toLowerCase())
+        );
+      }
+
+      if (filters.processNumber) {
+        transfers = transfers.filter((t: AsaasTransfer) =>
+          t.description?.includes(filters.processNumber!)
+        );
+      }
+
+      if (filters.cpf) {
+        transfers = transfers.filter((t: AsaasTransfer) =>
+          t.recipientCpf === filters.cpf ||
+          t.description?.includes(filters.cpf)
+        );
+      }
+
+      if (filters.minValue) {
+        transfers = transfers.filter((t: AsaasTransfer) => t.value >= filters.minValue!);
+      }
+
+      if (filters.maxValue) {
+        transfers = transfers.filter((t: AsaasTransfer) => t.value <= filters.maxValue!);
+      }
+
+      // Sort by most recent first
+      transfers.sort((a: AsaasTransfer, b: AsaasTransfer) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+
+      return transfers;
+    } catch (error) {
+      console.error('Error searching transfers in Asaas:', error);
+      throw error;
+    }
   }
 
   async searchPaymentsByDescription(description: string): Promise<AsaasPayment[]> {
-    const params = new URLSearchParams();
-    params.append('description', description);
-    params.append('limit', '100');
+    try {
+      const response = await this.client.get('/payments', {
+        params: {
+          description,
+          limit: 100,
+        },
+      });
 
-    const response = await fetch(
-      `${this.apiUrl}/payments?${params.toString()}`,
-      { headers: this.getHeaders() }
-    );
-
-    if (!response.ok) {
-      throw new Error(`Erro ao buscar pagamentos por descrição: ${response.statusText}`);
+      return response.data.data || [];
+    } catch (error) {
+      console.error('Error searching payments by description:', error);
+      throw error;
     }
-
-    const data = await response.json() as { data: AsaasPayment[] };
-    return data.data;
   }
 
   /**
@@ -80,15 +161,24 @@ export class AsaasClient {
   }
 
   async getPaymentDetails(paymentId: string): Promise<AsaasPayment> {
-    const response = await fetch(
-      `${this.apiUrl}/payments/${paymentId}`,
-      { headers: this.getHeaders() }
-    );
-
-    if (!response.ok) {
-      throw new Error(`Erro ao buscar pagamento: ${response.statusText}`);
+    try {
+      const response = await this.client.get(`/payments/${paymentId}`);
+      return response.data;
+    } catch (error) {
+      console.error(`Error fetching payment details for ${paymentId}:`, error);
+      throw error;
     }
+  }
 
-    return response.json() as Promise<AsaasPayment>;
+  async getTransferDetails(transferId: string): Promise<AsaasTransfer> {
+    try {
+      const response = await this.client.get(`/transfers/${transferId}`);
+      return response.data;
+    } catch (error) {
+      console.error(`Error fetching transfer details for ${transferId}:`, error);
+      throw error;
+    }
   }
 }
+
+export default AsaasClient;
