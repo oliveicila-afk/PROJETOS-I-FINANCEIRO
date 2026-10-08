@@ -11,7 +11,7 @@
  *       - When transfer found: Archive (with 4 validations)
  */
 
-import { AdvboxClient } from '../integrations/advbox-client.js';
+import { AdvBoxClient } from '../integrations/advbox-client.js';
 import { AsaasClient, AsaasEntry, AsaasTransfer } from '../integrations/asaas-client.js';
 import { config } from '../config.js';
 
@@ -57,7 +57,7 @@ export class ArchivingAutomationService {
   private pendingArchivings: Map<string, PendingArchiving> = new Map();
 
   constructor() {
-    this.advboxClient = new AdvboxClient();
+    this.advboxClient = new AdvBoxClient();
     this.asaasClient = new AsaasClient();
   }
 

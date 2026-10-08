@@ -223,15 +223,168 @@ export class AdvBoxClient {
   }
 
   /**
+   * Get user by name from Advbox
+   * Searches all users and returns the one matching the given name
+   */
+  async getUserByName(name: string): Promise<{ id: string; name: string } | null> {
+    try {
+      const response = await fetch(
+        `${this.apiUrl}/users`,
+        { headers: this.getHeaders() }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Erro ao buscar usuários: ${response.statusText}`);
+      }
+
+      const data = await response.json() as any;
+      const users = data.users || data.data || [];
+
+      // Search for user by name (case-insensitive)
+      const user = users.find((u: any) =>
+        u.name?.toLowerCase().includes(name.toLowerCase()) ||
+        u.email?.toLowerCase().includes(name.toLowerCase())
+      );
+
+      if (user) {
+        return {
+          id: user.id || user.user_id,
+          name: user.name,
+        };
+      }
+
+      console.warn(`User "${name}" not found in Advbox`);
+      return null;
+    } catch (error) {
+      console.error(`Error fetching user "${name}":`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Get task type by name from Advbox
+   * Searches all task types and returns the one matching the given name
+   */
+  async getTaskTypeByName(taskName: string): Promise<{ id: string; name: string } | null> {
+    try {
+      const response = await fetch(
+        `${this.apiUrl}/settings`,
+        { headers: this.getHeaders() }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Erro ao buscar configurações: ${response.statusText}`);
+      }
+
+      const data = await response.json() as any;
+      const taskTypes = data.task_types || data.tasks_types || data.data?.task_types || [];
+
+      // Search for task type by name (case-insensitive)
+      const taskType = taskTypes.find((t: any) =>
+        t.name?.toLowerCase().includes(taskName.toLowerCase())
+      );
+
+      if (taskType) {
+        return {
+          id: taskType.id || taskType.task_type_id,
+          name: taskType.name,
+        };
+      }
+
+      console.warn(`Task type "${taskName}" not found in Advbox`);
+      return null;
+    } catch (error) {
+      console.error(`Error fetching task type "${taskName}":`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Automatically fetch all user IDs and task type ID from Advbox
+   * Used when environment variables are not set
+   * Searches by name: Priscila, Gabi, Anderson
+   * Searches for task type: "ARQUIVAMENTO DEFINITIVO DE CLIENTE"
+   */
+  async getOrFetchUserIds(): Promise<{
+    priscila: string;
+    gabi: string;
+    anderson: string;
+    taskTypeId: string;
+  }> {
+    const config_advbox = config.advbox;
+    const result = {
+      priscila: config_advbox.userIds.priscila,
+      gabi: config_advbox.userIds.gabi,
+      anderson: config_advbox.userIds.anderson,
+      taskTypeId: config_advbox.taskTypeId,
+    };
+
+    // Check if any ID is missing (marked as PENDING)
+    const needsFetch =
+      result.priscila === 'PENDING' ||
+      result.gabi === 'PENDING' ||
+      result.anderson === 'PENDING' ||
+      result.taskTypeId === 'PENDING';
+
+    if (!needsFetch) {
+      return result; // All IDs already configured
+    }
+
+    console.log('🔍 Fetching User IDs and Task Type ID from Advbox...');
+
+    // Fetch missing IDs
+    if (result.priscila === 'PENDING') {
+      const priscila = await this.getUserByName('Priscila');
+      if (priscila) {
+        result.priscila = priscila.id;
+        console.log(`✅ Found Priscila: ${priscila.id}`);
+      }
+    }
+
+    if (result.gabi === 'PENDING') {
+      const gabi = await this.getUserByName('Gabi');
+      if (gabi) {
+        result.gabi = gabi.id;
+        console.log(`✅ Found Gabi: ${gabi.id}`);
+      }
+    }
+
+    if (result.anderson === 'PENDING') {
+      const anderson = await this.getUserByName('Anderson');
+      if (anderson) {
+        result.anderson = anderson.id;
+        console.log(`✅ Found Anderson: ${anderson.id}`);
+      }
+    }
+
+    if (result.taskTypeId === 'PENDING') {
+      const taskType = await this.getTaskTypeByName('ARQUIVAMENTO DEFINITIVO DE CLIENTE');
+      if (taskType) {
+        result.taskTypeId = taskType.id;
+        console.log(`✅ Found Task Type: ${taskType.id}`);
+      }
+    }
+
+    // Check if all required IDs were found
+    const allFound = Object.values(result).every(id => id !== 'PENDING');
+    if (allFound) {
+      console.log('✅ All User IDs and Task Type ID successfully fetched!');
+    } else {
+      const missing = Object.entries(result)
+        .filter(([, id]) => id === 'PENDING')
+        .map(([key]) => key);
+      console.warn(`⚠️  Could not find: ${missing.join(', ')}`);
+    }
+
+    return result;
+  }
+
+  /**
    * Create archiving task (post)
    * API endpoint: POST /posts
    * Required fields: from, guests (array), tasks_id, lawsuits_id, start_date
    *
-   * Required environment variables:
-   * - ADVBOX_USER_ID_PRISCILA: User ID for task creator
-   * - ADVBOX_USER_ID_GABI: User ID for archiving responsible
-   * - ADVBOX_USER_ID_ANDERSON: User ID for legal responsible
-   * - ADVBOX_TASK_TYPE_ID_ARQUIVAMENTO: Task type ID for "ARQUIVAMENTO DEFINITIVO DE CLIENTE"
+   * Automatically fetches user IDs from Advbox if not configured
    */
   async createArchivingTask(lawsuitId: string, archivingData: {
     honorariosContratuaisIniciais?: number;
@@ -244,16 +397,19 @@ export class AdvBoxClient {
     caseType?: CaseType;
   }): Promise<boolean> {
     try {
-      const { userIds, taskTypeId } = config.advbox;
+      // Automatically fetch user IDs and task type ID if not configured
+      const { priscila, gabi, anderson, taskTypeId } = await this.getOrFetchUserIds();
 
-      // Validate that user IDs are configured
-      if (userIds.priscila === 'PENDING' || userIds.gabi === 'PENDING') {
+      // Validate that user IDs were successfully fetched
+      if (priscila === 'PENDING' || gabi === 'PENDING' || anderson === 'PENDING' || taskTypeId === 'PENDING') {
         throw new Error(
-          'User IDs not configured. Please set:' +
-          '\n- ADVBOX_USER_ID_PRISCILA' +
-          '\n- ADVBOX_USER_ID_GABI' +
-          '\n- ADVBOX_USER_ID_ANDERSON' +
-          '\n- ADVBOX_TASK_TYPE_ID_ARQUIVAMENTO'
+          'Could not fetch required User IDs or Task Type ID from Advbox. ' +
+          'Please ensure the following users exist in Advbox:' +
+          '\n- Priscila' +
+          '\n- Gabi' +
+          '\n- Anderson' +
+          '\nAnd the task type exists:' +
+          '\n- ARQUIVAMENTO DEFINITIVO DE CLIENTE'
         );
       }
 
@@ -276,11 +432,11 @@ export class AdvBoxClient {
       ].join('\n');
 
       // Build guests array - always include Gabi and Anderson
-      const guests = [userIds.gabi, userIds.anderson].filter(id => id !== 'PENDING');
+      const guests = [gabi, anderson].filter(id => id !== 'PENDING');
 
       // Create post payload for POST /posts endpoint
       const postPayload = {
-        from: userIds.priscila,          // Priscila creates the task
+        from: priscila,                   // Priscila creates the task
         guests,                            // Array with Gabi and Anderson
         tasks_id: taskTypeId,             // Task type ID
         lawsuits_id: lawsuitId,           // Lawsuit/case ID
@@ -322,40 +478,4 @@ export class AdvBoxClient {
     }
   }
 
-  /**
-   * Legacy createTask - kept for compatibility
-   */
-  async createTask(lawsuitId: string, payload: any): Promise<boolean> {
-    try {
-      // Transform payload for /posts endpoint
-      const postPayload = {
-        from: config.advbox.userIds.priscila,
-        guests: [config.advbox.userIds.gabi, config.advbox.userIds.anderson],
-        tasks_id: config.advbox.taskTypeId,
-        lawsuits_id: lawsuitId,
-        start_date: payload.due_date || new Date().toISOString().split('T')[0],
-        comments: payload.description || payload.title,
-        urgent: payload.priority === 'HIGH',
-        important: true,
-      };
-
-      const response = await fetch(
-        `${this.apiUrl}/posts`,
-        {
-          method: 'POST',
-          headers: this.getHeaders(),
-          body: JSON.stringify(postPayload),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`Erro ao criar tarefa: ${response.statusText}`);
-      }
-
-      return true;
-    } catch (error) {
-      console.error(`Error creating task for lawsuit ${lawsuitId}:`, error);
-      throw error;
-    }
-  }
 }
