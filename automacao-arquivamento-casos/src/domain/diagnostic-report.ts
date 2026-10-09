@@ -102,8 +102,10 @@ export class DiagnosticReport {
   markSuccess(taskId: string, protocolContent: string): void {
     this.data.taskCreatedId = taskId;
     this.data.protocolContent = protocolContent;
-    if (this.data.status === 'success' || this.data.status === 'success_with_warnings') {
-      this.data.status = 'success_with_warnings';
+    // Manter o status atual se for sucesso ou sucesso com avisos
+    // Se não for sucesso, não mudar status
+    if (this.data.status !== 'failed') {
+      // Manter status como está (success ou success_with_warnings)
     }
   }
 

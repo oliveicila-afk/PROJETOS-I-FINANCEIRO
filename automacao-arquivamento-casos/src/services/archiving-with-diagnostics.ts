@@ -11,6 +11,7 @@
 
 import { ErrorDiagnostics, DiagnosticResult } from '../utils/error-diagnostics.js';
 import { DiagnosticReport } from '../domain/diagnostic-report.js';
+import { getEmailService } from './email-service.js';
 
 export interface ArchivingWithDiagnosticsConfig {
   enableAutoResolution?: boolean;
@@ -192,22 +193,68 @@ export class ArchivingWithDiagnostics {
   private async sendReportByEmail(report: DiagnosticReport): Promise<void> {
     try {
       const htmlContent = report.generateEmailReport();
-      const textContent = report.generateTextReport();
       const data = report.getData();
 
+      if (!this.config.emailAddress) {
+        console.log(
+          `[Diagnostics] ⚠️ Email não configurado, pulando envio de relatório`
+        );
+        return;
+      }
+
       console.log(
-        `[Diagnostics] Preparando email: ${data.clientName} | ${data.caseId}`
+        `[Diagnostics] 📧 Preparando email para: ${this.config.emailAddress}`
       );
 
-      // Placeholder: implementar envio de email
-      // Pode usar: SendGrid, AWS SES, Nodemailer, etc.
+      // Obter serviço de email
+      const emailService = getEmailService({
+        enabled: true,
+        provider: (process.env.EMAIL_PROVIDER as any) || 'nodemailer',
+        from: process.env.EMAIL_FROM || 'automacao@calandrini.com.br',
+        sendgridApiKey: process.env.SENDGRID_API_KEY,
+        awsRegion: process.env.AWS_REGION,
+        smtpConfig: process.env.SMTP_HOST
+          ? {
+              host: process.env.SMTP_HOST,
+              port: parseInt(process.env.SMTP_PORT || '587'),
+              secure: process.env.SMTP_SECURE === 'true',
+              auth: {
+                user: process.env.SMTP_USER || '',
+                pass: process.env.SMTP_PASS || '',
+              },
+            }
+          : undefined,
+      });
 
-      console.log(
-        `[Diagnostics] ✅ Relatório preparado para envio por email`
-      );
+      // Preparar assunto do email com status
+      const statusText = data.status === 'success'
+        ? '✅ Sucesso'
+        : data.status === 'success_with_warnings'
+          ? '⚠️ Sucesso com Avisos'
+          : '❌ Falha';
+
+      const subject = `[Automação de Arquivamento] ${statusText} - ${data.clientName}`;
+
+      // Enviar email
+      const result = await emailService.sendEmail({
+        to: this.config.emailAddress,
+        subject,
+        html: htmlContent,
+        text: report.generateTextReport(),
+      });
+
+      if (result.success) {
+        console.log(
+          `[Diagnostics] ✅ Email enviado com sucesso: ${result.messageId}`
+        );
+      } else {
+        console.error(
+          `[Diagnostics] ❌ Erro ao enviar email: ${result.error}`
+        );
+      }
     } catch (error) {
       console.error(
-        `[Diagnostics] ❌ Erro ao preparar relatório para email:`,
+        `[Diagnostics] ❌ Erro ao enviar relatório por email:`,
         error
       );
     }

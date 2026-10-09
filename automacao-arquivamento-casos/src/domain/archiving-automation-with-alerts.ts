@@ -13,6 +13,8 @@ import { RetryManager, RetryConfig } from '../services/retry-manager.js';
 import { SlackNotifier, ArchivingNotification } from '../services/slack-notifier.js';
 import { HistoryService } from '../services/history-service.js';
 import { AlertingService } from '../services/alerting-service.js';
+import { ArchivingWithDiagnostics, ArchivingWithDiagnosticsConfig } from '../services/archiving-with-diagnostics.js';
+import { getEmailService } from '../services/email-service.js';
 
 /**
  * Configuração para automação com alertas
@@ -23,6 +25,9 @@ export interface ArchivingWithAlertsConfig {
   enableSlack: boolean;
   enableHistory: boolean;
   enableAlerting: boolean;
+  enableDiagnostics?: boolean;
+  diagnosticsConfig?: ArchivingWithDiagnosticsConfig;
+  emailAddress?: string;
 }
 
 /**
@@ -34,6 +39,7 @@ export class ArchivingAutomationWithAlerts {
   private slackNotifier?: SlackNotifier;
   private historyService?: HistoryService;
   private alertingService?: AlertingService;
+  private diagnosticsService?: ArchivingWithDiagnostics;
   private config: ArchivingWithAlertsConfig;
 
   constructor(config: ArchivingWithAlertsConfig = {
@@ -41,9 +47,13 @@ export class ArchivingAutomationWithAlerts {
     enableSlack: true,
     enableHistory: true,
     enableAlerting: true,
+    enableDiagnostics: true,
   }) {
     this.automationService = new ArchivingAutomationService();
-    this.config = config;
+    this.config = {
+      ...config,
+      enableDiagnostics: config.enableDiagnostics ?? true,
+    };
 
     // Inicializa serviços baseado na configuração
     if (this.config.enableSlack) {
@@ -71,11 +81,23 @@ export class ArchivingAutomationWithAlerts {
       });
     }
 
+    // Inicializa serviço de diagnósticos
+    if (this.config.enableDiagnostics) {
+      this.diagnosticsService = new ArchivingWithDiagnostics(
+        this.config.diagnosticsConfig ?? {
+          enableAutoResolution: true,
+          enableEmailReport: true,
+          emailAddress: this.config.emailAddress,
+        }
+      );
+    }
+
     console.log('[Archiving Automation With Alerts] Initialized with config:', {
       retry: this.config.enableRetry,
       slack: this.config.enableSlack,
       history: this.config.enableHistory,
       alerting: this.config.enableAlerting,
+      diagnostics: this.config.enableDiagnostics,
     });
   }
 
@@ -86,6 +108,7 @@ export class ArchivingAutomationWithAlerts {
     payload: WebhookArchivingPayload
   ): Promise<ArchivingTask | null> {
     const startTime = Date.now();
+    const executionId = `exec-${Date.now()}`;
     const notification: ArchivingNotification = {
       type: 'warning',
       lawsuitId: payload.lawsuitId,
@@ -96,9 +119,86 @@ export class ArchivingAutomationWithAlerts {
     };
 
     try {
-      // Executa com retry se configurado
-      if (this.retryManager && this.config.enableRetry) {
-        console.log('[Archiving With Alerts] Executing with automatic retry...');
+      // Executa com diagnósticos e retry se configurado
+      if (this.diagnosticsService && this.config.enableDiagnostics) {
+        console.log('[Archiving With Alerts] Executing with diagnostics and retry...');
+
+        const { success, result, report } = await this.diagnosticsService.executeWithDiagnostics(
+          executionId,
+          payload.lawsuitId,
+          payload.clientName,
+          '', // clientCPF será obtido da payload se disponível
+          payload.processNumber,
+          async () => {
+            // Executa com retry se configurado
+            if (this.retryManager && this.config.enableRetry) {
+              const archivingResult = await this.retryManager.executeWithRetry<ArchivingTask | null>(
+                async () => {
+                  return this.automationService.processArchivingCase(payload);
+                },
+                notification
+              );
+
+              return {
+                result: archivingResult,
+                taskId: archivingResult?.entryId,
+                protocolContent: archivingResult?.protocol || '',
+              };
+            } else {
+              // Executa sem retry
+              const archivingResult = await this.automationService.processArchivingCase(payload);
+
+              return {
+                result: archivingResult,
+                taskId: archivingResult?.entryId,
+                protocolContent: archivingResult?.protocol || '',
+              };
+            }
+          }
+        );
+
+        const durationMs = Date.now() - startTime;
+
+        // Notifica sucesso
+        if (success && result && this.alertingService) {
+          const successNotification: ArchivingNotification = {
+            type: 'success',
+            lawsuitId: payload.lawsuitId,
+            processNumber: payload.processNumber,
+            clientName: payload.clientName,
+            message: `✅ Arquivamento concluído com sucesso`,
+            timestamp: new Date().toISOString(),
+            taskId: result.result?.entryId,
+          };
+
+          await this.alertingService.notifySuccess(successNotification);
+        }
+
+        // Registra no histórico
+        if (this.historyService && result?.result) {
+          this.historyService.addEntry({
+            timestamp: new Date().toISOString(),
+            processNumber: payload.processNumber,
+            clientName: payload.clientName,
+            lawsuitId: payload.lawsuitId,
+            status: success ? 'success' : 'success_with_warnings',
+            attempt: 1,
+            maxAttempts: this.config.retryConfig?.maxRetries ?? 3,
+            result: {
+              taskId: result.result.entryId,
+              protocol: result.result.protocol,
+              honoraries: `R$ ${result.result.honorariesFees.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+              caseType: result.result.caseType,
+            },
+            durationMs,
+            diagnostics: report.getData().diagnostics,
+          });
+        }
+
+        return result?.result || null;
+      } else if (this.retryManager && this.config.enableRetry) {
+        // Fallback: executa com retry mas sem diagnósticos
+        console.log('[Archiving With Alerts] Executing with automatic retry (no diagnostics)...');
 
         const result = (await this.retryManager.executeWithRetry<ArchivingTask | null>(async () => {
           return this.automationService.processArchivingCase(payload);
@@ -143,8 +243,8 @@ export class ArchivingAutomationWithAlerts {
 
         return result;
       } else {
-        // Executa sem retry
-        console.log('[Archiving With Alerts] Executing without automatic retry');
+        // Executa sem retry e sem diagnósticos
+        console.log('[Archiving With Alerts] Executing without automatic retry or diagnostics');
         const result = await this.automationService.processArchivingCase(payload);
 
         if (result && this.alertingService) {
@@ -307,6 +407,13 @@ export class ArchivingAutomationWithAlerts {
    */
   getAlertingService(): AlertingService | undefined {
     return this.alertingService;
+  }
+
+  /**
+   * Obtém serviço de diagnósticos
+   */
+  getDiagnosticsService(): ArchivingWithDiagnostics | undefined {
+    return this.diagnosticsService;
   }
 }
 
