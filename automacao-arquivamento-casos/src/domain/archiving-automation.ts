@@ -13,6 +13,7 @@
 
 import { AdvBoxClient } from '../integrations/advbox-client.js';
 import { AsaasClient, AsaasEntry, AsaasTransfer } from '../integrations/asaas-client.js';
+import { ArchivingTaskCreator } from './archiving-task-creator.js';
 import { config } from '../config.js';
 
 export interface ArchivingValidation {
@@ -696,32 +697,35 @@ export class ArchivingAutomationService {
     feesInfo: any
   ): Promise<boolean> {
     try {
-      const taskPayload = {
-        lawsuit_id: caseDetails.id,
-        title: 'ARQUIVAMENTO DEFINITIVO DE CLIENTE (1 pts)',
-        description: `Caso arquivado automaticamente\nProcesso: ${processNumber}\nCliente: ${clientName}\nValor entrada: ${entry.value}${transfer ? `\nValor repasse: ${transfer.value}` : ''}`,
-        status: 'OPEN',
-        priority: 'HIGH',
-        due_date: new Date().toISOString().split('T')[0],
-        protocol_data: {
-          title: 'PROTOCOLO DE ARQUIVAMENTO - OBRIGAÇÕES INTEGRALMENTE CUMPRIDAS',
-          honoraries_contractual_initial: 0,
-          honoraries_succumb: 0,
-          honoraries_admin: feesInfo.honorariesFees,
-          honoraries_total: feesInfo.honorariesFees,
-          invoice_issued: false,
-          observation: feesInfo.protocol,
-        },
-        metadata: {
-          automation_timestamp: new Date().toISOString(),
-          asaas_entry_id: entry.id,
-          asaas_transfer_id: transfer?.id || null,
-          trigger: 'asaas_driven',
-        },
-      };
+      const taskCreator = new ArchivingTaskCreator();
 
-      await this.advboxClient.createTask(caseDetails.id, taskPayload);
-      return true;
+      // Determine result type based on case details
+      let resultado: 'ganho' | 'perdido' | 'distrato' = 'ganho';
+      if (caseDetails.notes?.toLowerCase().includes('perdido')) {
+        resultado = 'perdido';
+      } else if (caseDetails.notes?.toLowerCase().includes('distrato')) {
+        resultado = 'distrato';
+      }
+
+      const result = await taskCreator.createAndAssignTask({
+        lawsuitId: caseDetails.id,
+        clientName: clientName,
+        clientCPF: caseDetails.customer_cpf || 'N/A',
+        processNumber: processNumber,
+        honorarios: {
+          contratuais: caseDetails.honoraries_contractual_initial || 0,
+          sucumbenciais: caseDetails.honoraries_succumb || 0,
+          exito: feesInfo.honorariesFees || 0,
+          total: feesInfo.honorariesFees || 0
+        },
+        resultado,
+        dataArquivamento: new Date().toLocaleDateString('pt-BR'),
+        notaFiscal: caseDetails.invoice_number || undefined,
+        observacoes: feesInfo.protocol || 'Arquivamento realizado automaticamente'
+      });
+
+      console.log(`[Archiving Automation] Task creation result:`, result);
+      return result.taskCreated;
     } catch (error) {
       console.error(`Error creating archiving task for case ${caseId}:`, error);
       throw error;

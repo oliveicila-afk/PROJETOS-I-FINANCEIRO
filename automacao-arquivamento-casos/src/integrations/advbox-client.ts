@@ -235,4 +235,57 @@ export class AdvBoxClient {
     }
   }
 
+  /**
+   * Create a post/task in Advbox (based on Crossel pattern)
+   * Posts are like annotations/comments on a lawsuit case
+   * Used for task creation and assignment in archiving workflow
+   */
+  async createPost(data: Record<string, unknown>): Promise<any> {
+    try {
+      const response = await fetch(
+        `${this.apiUrl}/posts`,
+        {
+          method: 'POST',
+          headers: this.getHeaders(),
+          body: JSON.stringify(data),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Erro ao criar post/tarefa: ${response.statusText}`);
+      }
+
+      return response.json();
+    } catch (error) {
+      console.error('Error creating post:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update lawsuit responsible person
+   * Used to assign lawsuit to a specific user
+   */
+  async updateLawsuit(lawsuitId: string, data: Record<string, unknown>): Promise<any> {
+    try {
+      const response = await fetch(
+        `${this.apiUrl}/lawsuits/${lawsuitId}`,
+        {
+          method: 'PUT',
+          headers: this.getHeaders(),
+          body: JSON.stringify(data),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Erro ao atualizar processo: ${response.statusText}`);
+      }
+
+      return response.json();
+    } catch (error) {
+      console.error('Error updating lawsuit:', error);
+      throw error;
+    }
+  }
+
 }

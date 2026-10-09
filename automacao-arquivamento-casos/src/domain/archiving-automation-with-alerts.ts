@@ -168,34 +168,35 @@ export class ArchivingAutomationWithAlerts {
             clientName: payload.clientName,
             message: `✅ Arquivamento concluído com sucesso`,
             timestamp: new Date().toISOString(),
-            taskId: result.result?.entryId,
+            taskId: result?.entryId,
           };
 
           await this.alertingService.notifySuccess(successNotification);
         }
 
         // Registra no histórico
-        if (this.historyService && result?.result) {
+        if (this.historyService && result) {
           this.historyService.addEntry({
             timestamp: new Date().toISOString(),
             processNumber: payload.processNumber,
             clientName: payload.clientName,
             lawsuitId: payload.lawsuitId,
-            status: success ? 'success' : 'success_with_warnings',
+            status: success ? 'success' : 'error',
             attempt: 1,
             maxAttempts: this.config.retryConfig?.maxRetries ?? 3,
             result: {
-              taskId: result.result.entryId,
-              protocol: result.result.protocol,
-              honoraries: `R$ ${result.result.honorariesFees.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-              caseType: result.result.caseType,
+              taskId: result?.entryId || 'unknown',
+              protocol: result?.protocol || 'N/A',
+              honoraries: result?.honorariesFees
+                ? `R$ ${result.honorariesFees.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+                : 'N/A',
+              caseType: result?.caseType || 'unknown',
             },
             durationMs,
-            diagnostics: report.getData().diagnostics,
           });
         }
 
-        return result?.result || null;
+        return result || null;
       } else if (this.retryManager && this.config.enableRetry) {
         // Fallback: executa com retry mas sem diagnósticos
         console.log('[Archiving With Alerts] Executing with automatic retry (no diagnostics)...');

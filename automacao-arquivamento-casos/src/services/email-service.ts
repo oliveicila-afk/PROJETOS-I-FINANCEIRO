@@ -45,7 +45,10 @@ export class EmailService {
       enabled: config.enabled ?? false,
       provider: config.provider ?? 'nodemailer',
       from: config.from ?? 'automacao@calandrini.com.br',
-      ...config,
+      sendgridApiKey: config.sendgridApiKey,
+      awsRegion: config.awsRegion,
+      smtpConfig: config.smtpConfig,
+      to: config.to,
     };
 
     console.log('[EmailService] Initialized with provider:', this.config.provider);
@@ -61,14 +64,14 @@ export class EmailService {
     }
 
     try {
-      const from = payload.from || this.config.from;
+      const from = payload.from || this.config.from || 'automacao@calandrini.com.br';
 
       if (this.config.provider === 'nodemailer') {
-        return await this.sendViaNodemailer(from, payload);
+        return await this.sendViaNodemailer(from as string, payload);
       } else if (this.config.provider === 'sendgrid') {
-        return await this.sendViaSendGrid(from, payload);
+        return await this.sendViaSendGrid(from as string, payload);
       } else if (this.config.provider === 'aws-ses') {
-        return await this.sendViaAwsSES(from, payload);
+        return await this.sendViaAwsSES(from as string, payload);
       }
 
       return { success: false, error: 'Unknown provider' };
@@ -89,6 +92,7 @@ export class EmailService {
     try {
       // Importar dinamicamente para não ser obrigatório
       if (!this.nodemailer) {
+        // @ts-expect-error nodemailer is optional dependency
         this.nodemailer = await import('nodemailer');
       }
 
@@ -136,6 +140,7 @@ export class EmailService {
         throw new Error('SendGrid API key not configured');
       }
 
+      // @ts-expect-error @sendgrid/mail is optional dependency
       const sgMail = await import('@sendgrid/mail');
       sgMail.setApiKey(this.config.sendgridApiKey);
 
@@ -168,6 +173,7 @@ export class EmailService {
         throw new Error('AWS region not configured');
       }
 
+      // @ts-expect-error aws-sdk is optional dependency
       const AWS = await import('aws-sdk');
       const ses = new AWS.SES({ region: this.config.awsRegion });
 
