@@ -91,7 +91,7 @@ jobs:
             exit 1
           fi
 
-      - name: '📧 Notificar sucesso'
+      - name: '📧 Notificar Gabi (criar tarefa)'
         if: success()
         uses: dawidd6/action-send-mail@v3
         with:
@@ -99,22 +99,70 @@ jobs:
           server_port: ${{ secrets.MAIL_PORT }}
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
-          subject: '✅ Arquivamento Automático - Sucesso'
-          to: ${{ secrets.ADMIN_EMAIL }}
+          subject: '📌 Nova Tarefa de Arquivamento - ${{ steps.validate.outputs.client_name }}'
+          to: ${{ secrets.GABI_EMAIL }}
           from: 'Automação de Arquivamento <noreply@empresa.com.br>'
           body: |
-            Caso arquivado com sucesso!
+            Tarefa de arquivamento criada em Advbox. Favor processar:
 
             📋 Informações do Caso:
             - Lawsuit ID: ${{ steps.validate.outputs.lawsuit_id }}
             - Processo: ${{ steps.validate.outputs.process_number }}
             - Cliente: ${{ steps.validate.outputs.client_name }}
 
-            ✅ Status: Tarefa criada em Advbox
             ⏱️ Timestamp: ${{ github.event.client_payload.timestamp }}
 
-            Acesse o GitHub Actions para mais detalhes:
-            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Próximo passo: Processar tarefa em Advbox
+
+      - name: '📧 Notificar Priscila'
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_SERVER }}
+          server_port: ${{ secrets.MAIL_PORT }}
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: '✅ Caso Arquivado - ${{ steps.validate.outputs.client_name }} - R$ ${{ github.event.client_payload.case_value }}'
+          to: ${{ secrets.PRISCILA_EMAIL }}
+          from: 'Automação de Arquivamento <noreply@empresa.com.br>'
+          body: |
+            Tarefa de arquivamento criada e atribuída a Gabi.
+
+            📋 Informações do Caso:
+            - Lawsuit ID: ${{ steps.validate.outputs.lawsuit_id }}
+            - Processo: ${{ steps.validate.outputs.process_number }}
+            - Cliente: ${{ steps.validate.outputs.client_name }}
+            - Valor: R$ ${{ github.event.client_payload.case_value }}
+
+            👤 Responsável: Gabi
+            ✅ Status: Aguardando processamento
+            ⏱️ Data: ${{ github.event.client_payload.timestamp }}
+
+      - name: '📧 Notificar Anderson (Jurídico)'
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_SERVER }}
+          server_port: ${{ secrets.MAIL_PORT }}
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: '✅ Novo Arquivamento - ${{ steps.validate.outputs.client_name }}'
+          to: ${{ secrets.ANDERSON_EMAIL }}
+          from: 'Automação de Arquivamento <noreply@empresa.com.br>'
+          body: |
+            Novo caso preparado para arquivamento.
+
+            📋 Informações do Caso:
+            - Lawsuit ID: ${{ steps.validate.outputs.lawsuit_id }}
+            - Processo: ${{ steps.validate.outputs.process_number }}
+            - Cliente: ${{ steps.validate.outputs.client_name }}
+            - Valor: R$ ${{ github.event.client_payload.case_value }}
+
+            👤 Responsável (execução): Gabi
+            ✅ Status: Em processamento
+            ⏱️ Data: ${{ github.event.client_payload.timestamp }}
+
+            Contato direto: Priscila (Diretora Financeira)
 
       - name: '🚨 Notificar erro'
         if: failure()
