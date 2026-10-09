@@ -120,7 +120,7 @@ Não restam obrigações a serem cumpridas, estando todas integralmente satisfei
 Realizada a baixa e o arquivamento no ADVBOX.
     `;
 
-    // Criar tarefa no Advbox para Gabi
+    // Criar tarefa no Advbox para Gabriele Nascimento
     const task = await this.adapter.createArchivingProtocol(
       info.caseId,
       'PROTOCOLO DE ARQUIVAMENTO – OBRIGAÇÕES INTEGRALMENTE CUMPRIDAS',

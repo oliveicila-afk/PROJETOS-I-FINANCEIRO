@@ -111,7 +111,7 @@ Opcionais:
 
       console.log(`\n✅ Protocolo criado com sucesso!`);
       console.log(`📌 ID da tarefa: ${taskId}`);
-      console.log(`📍 Atribuído para: Gabi\n`);
+      console.log(`📍 Atribuído para: Gabriele Nascimento\n`);
 
       return;
     }
@@ -141,7 +141,7 @@ Opcionais:
       const taskId = await archivingService.createArchivingProtocol(info);
 
       console.log(`\n✅ ARQUIVAMENTO PROCESSADO COM SUCESSO!\n`);
-      console.log(`📌 Tarefa criada para Gabi: ${taskId}`);
+      console.log(`📌 Tarefa criada para Gabriele Nascimento: ${taskId}`);
       console.log(`📋 Informações do protocolo:`);
       console.log(`   - Cliente: ${info.clientName}`);
       console.log(`   - Processo: ${info.processNumber}`);

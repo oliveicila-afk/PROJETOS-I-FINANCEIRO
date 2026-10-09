@@ -107,7 +107,7 @@ export class ArchivingAdapter {
   }
 
   /**
-   * Cria tarefa de protocolo no Advbox e atribui para Gabi
+   * Cria tarefa de protocolo no Advbox e atribui para Gabriele Nascimento
    * @throws AdapterError se falha na criação
    */
   async createArchivingProtocol(
@@ -119,7 +119,7 @@ export class ArchivingAdapter {
       return await this.advboxClient.createTask(caseId, {
         title,
         description: content,
-        assignTo: 'gabi',
+        assignTo: 'Gabriele Nascimento',
       });
     } catch (error) {
       throw this.formatError(
