@@ -75,12 +75,13 @@ export class ArchivingAutomationService {
    */
   async processArchivingCase(payload: WebhookArchivingPayload): Promise<ArchivingTask | null> {
     console.log(
-      `[Archiving Automation] Processing webhook archiving for case: ${payload.processNumber}`
+      `[Archiving Automation] Processing webhook archiving for case: ${payload.lawsuitId}`
     );
 
     try {
-      // Step 1: Get case details from Advbox
-      const caseDetails = await this.advboxClient.getLawsuitByNumber(payload.processNumber);
+      // Step 1: Get case details from Advbox using lawsuit ID (not process number)
+      // The API requires the lawsuit ID, not the process number for direct lookups
+      const caseDetails = await this.advboxClient.getLawsuit(payload.lawsuitId);
 
       if (!caseDetails) {
         throw new Error(
