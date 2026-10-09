@@ -77,7 +77,18 @@ export class AdvBoxClient {
     );
 
     if (!response.ok) {
-      throw new Error(`Erro ao buscar caso ${caseId}: ${response.statusText}`);
+      // Incluir diagnóstico no erro
+      const diagnosticInfo = {
+        statusCode: response.status,
+        statusText: response.statusText,
+        endpoint: `${this.apiUrl}/lawsuits/${caseId}`,
+        caseId,
+      };
+
+      throw new Error(
+        `Erro ao buscar caso ${caseId}: ${response.statusText} | ` +
+        `Diagnóstico: ${JSON.stringify(diagnosticInfo)}`
+      );
     }
 
     return response.json() as Promise<AdvBoxCase>;
