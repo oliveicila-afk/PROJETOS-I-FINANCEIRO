@@ -69,8 +69,10 @@ export class AdvBoxClient {
   }
 
   async getCaseDetails(caseId: string): Promise<AdvBoxCase> {
+    // Try /lawsuits endpoint first (primary endpoint in Advbox)
+    // The case_id parameter is actually a lawsuit_id in Advbox
     const response = await fetch(
-      `${this.apiUrl}/cases/${caseId}`,
+      `${this.apiUrl}/lawsuits/${caseId}`,
       { headers: this.getHeaders() }
     );
 
